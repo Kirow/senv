@@ -37,7 +37,7 @@ describe("CLI operations", () => {
     expect(stdout.toString()).toContain("testuser-local");
 
     // Check files
-    const configPath = path.join(tempProjectDir, ".senv.jsonc");
+    const configPath = path.join(tempProjectDir, ".senv.json");
     const keystorePath = path.join(tempConfigDir, "identity.json");
     
     expect(await fs.exists(configPath)).toBe(true);
@@ -107,13 +107,62 @@ describe("CLI operations", () => {
     await fs.rm(tempConfigDir2, { recursive: true, force: true });
   });
 
+  it("exports readonly key bundle and imports for decrypt", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "READ_ONLY_KEY", "read_secret");
+
+    const exportRes = await runCLI("key", "export", "testuser-local", "--readonly");
+    expect(exportRes.exitCode).toBe(0);
+    const b64 = exportRes.stdout.toString().trim();
+
+    const tempConfigDir2 = await fs.mkdtemp(path.join(os.tmpdir(), "senv-test-config-ro-"));
+    const importRes = await $`bun run ./src/index.ts key import ${b64}`
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir2,
+        SENV_PROJECT_DIR: tempProjectDir,
+      })
+      .nothrow()
+      .quiet();
+
+    expect(importRes.exitCode).toBe(0);
+
+    const getRes = await $`bun run ./src/index.ts key get READ_ONLY_KEY`
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir2,
+        SENV_PROJECT_DIR: tempProjectDir,
+      })
+      .nothrow()
+      .quiet();
+
+    expect(getRes.exitCode).toBe(0);
+    expect(getRes.stdout.toString().trim()).toBe("read_secret");
+
+    await fs.rm(tempConfigDir2, { recursive: true, force: true });
+  });
+
+  it("escapes shell export values safely and rejects invalid env names", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "SAFE_KEY", "quo'te $(uname) `id` \"x\"");
+
+    const exportRes = await runCLI("export");
+    expect(exportRes.exitCode).toBe(0);
+    expect(exportRes.stdout.toString()).toContain("export SAFE_KEY='quo'\\''te $(uname) `id` \"x\"'");
+
+    await runCLI("key", "add", "testuser-local", "BAD-KEY", "oops");
+    const badExportRes = await runCLI("export");
+    expect(badExportRes.exitCode).toBe(1);
+    expect(badExportRes.stderr.toString()).toContain("Invalid environment variable name 'BAD-KEY'");
+  });
+
   it("handles migration between two files", async () => {
     await runCLI("init");
     await runCLI("key", "add", "testuser-local", "KEY_A", "VAL_A");
 
     // Copy to file B
-    const fileA = path.join(tempProjectDir, ".senv.jsonc");
-    const fileB = path.join(tempProjectDir, ".senv.b.jsonc");
+    const fileA = path.join(tempProjectDir, ".senv.json");
+    const fileB = path.join(tempProjectDir, ".senv.b.json");
     await fs.copyFile(fileA, fileB);
     
     // Mutate file A
@@ -162,5 +211,20 @@ describe("CLI operations", () => {
 
     // Clean up
     await fs.rm(customKeystore, { force: true });
+  });
+
+  it("sanitizes init identity names from user env", async () => {
+    const initRes = await $`bun run ./src/index.ts init`
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir,
+        SENV_PROJECT_DIR: tempProjectDir,
+        USER: "John Doe+ops@acme",
+      })
+      .nothrow()
+      .quiet();
+
+    expect(initRes.exitCode).toBe(0);
+    expect(initRes.stdout.toString()).toContain("Identity 'John-Doe-ops-acme-local' added.");
   });
 });

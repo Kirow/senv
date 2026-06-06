@@ -5,13 +5,13 @@ import * as readline from "node:readline/promises";
 export const identityRmCmd = new Command("rm")
   .argument("<ID_NAME>", "Name of the identity to remove")
   .option("-y, --yes", "Skip confirmation prompt")
-  .description("Removes an identity from .senv.jsonc")
+  .description("Removes an identity from .senv.json")
   .action(async (idName, options, command) => {
     const keystorePath = command.optsWithGlobals().keystore;
     try {
       const config = await store.readProjectConfig();
       if (!config.identities[idName]) {
-        console.error(`Identity '${idName}' not found in .senv.jsonc.`);
+        console.error(`Identity '${idName}' not found in .senv.json.`);
         process.exit(1);
       }
 

@@ -18,7 +18,7 @@ export const keyAddCmd = new Command("add")
       const projectKeystore = await store.getProjectKeystore(keystorePath);
 
       if (!config.identities[idName]) {
-        console.error(`Identity '${idName}' not found in .senv.jsonc.`);
+        console.error(`Identity '${idName}' not found in .senv.json.`);
         process.exit(1);
       }
 

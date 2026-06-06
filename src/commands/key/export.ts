@@ -4,8 +4,7 @@ import * as store from "../../core/store";
 
 export const keyExportCmd = new Command("export")
   .argument("<ID_NAME>", "Name of the identity")
-  .option("--public", "Export only the public key")
-  .option("--private", "Export only the private key")
+  .option("--readonly", "Export only the private key for decrypt-only access")
   .description("Exports an identity's keys as a Base64 string")
   .action(async (idName, options, command) => {
     const parentOpts = command.parent?.optsWithGlobals() || {};
@@ -20,16 +19,10 @@ export const keyExportCmd = new Command("export")
       }
       
       const { publicKey, privateKey } = projectKeystore[idName];
-      
-      let expPub = publicKey;
-      let expPriv = privateKey;
-      
-      if (options.public && !options.private) {
-        expPriv = ""; // Blank out private key
-      } else if (options.private && !options.public) {
-        expPub = ""; // Blank out public key
-      }
-      
+
+      const expPub = options.readonly ? "" : publicKey;
+      const expPriv = privateKey;
+
       const b64 = crypto.encodeKeyPairBase64(idName, expPub, expPriv);
       console.log(b64);
     } catch (e: any) {

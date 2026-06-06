@@ -5,21 +5,21 @@ import { type SenvProjectConfig } from "../core/store";
 import * as fs from "node:fs";
 
 export const initCmd = new Command("init")
-  .description("Initializes a new .senv.jsonc and creates a local keypair if missing")
+  .description("Initializes a new .senv.json and creates a local keypair if missing")
   .action(async (options, command) => {
     const keystorePath = command.optsWithGlobals().keystore;
     const projectKeystore = await store.getProjectKeystore(keystorePath);
     const configPath = store.getProjectConfigPath();
 
     if (fs.existsSync(configPath)) {
-      console.log(".senv.jsonc already exists.");
+      console.log(".senv.json already exists.");
       try {
         const config = await store.readProjectConfig();
         const configIdentities = Object.keys(config.identities);
         const missingKeys = configIdentities.filter(id => !projectKeystore[id]);
         
         if (missingKeys.length > 0) {
-          console.warn("\n[WARNING] The following identities are in .senv.jsonc but are missing from your local keystore:");
+          console.warn("\n[WARNING] The following identities are in .senv.json but are missing from your local keystore:");
           missingKeys.forEach(id => console.warn(`- ${id}`));
           console.warn("You will not be able to decrypt payloads or add new keys to these identities.");
         } else {
@@ -31,8 +31,13 @@ export const initCmd = new Command("init")
       return;
     }
 
-    let userEmail = process.env.USER || "user";
-    const idName = `${userEmail}-local`;
+    const rawUser = process.env.USER || process.env.USERNAME || "user";
+    const sanitizedUser = rawUser
+      .replace(/[^A-Za-z0-9._-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^[.-]+|[.-]+$/g, "");
+    const baseIdentity = sanitizedUser.length > 0 ? sanitizedUser : "user";
+    const idName = `${baseIdentity}-local`;
 
     if (!projectKeystore[idName]) {
       console.log(`Generating new RSA keypair for identity: ${idName}...`);
@@ -41,7 +46,7 @@ export const initCmd = new Command("init")
       await store.writeProjectKeystore(projectKeystore, keystorePath);
     }
 
-    console.log("Creating .senv.jsonc...");
+    console.log("Creating .senv.json...");
     const config: SenvProjectConfig = {
       version: "1.0",
       identities: {},

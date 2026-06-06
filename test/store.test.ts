@@ -41,22 +41,16 @@ describe("store operations", () => {
     expect(readData).toEqual(data);
   });
 
-  it("handles missing .senv.jsonc by throwing specific error", async () => {
-    expect(store.readProjectConfig()).rejects.toThrow(".senv.jsonc not found");
+  it("handles missing .senv.json by throwing specific error", async () => {
+    expect(store.readProjectConfig()).rejects.toThrow(".senv.json not found");
   });
 
-  it("writes and reads project config while stripping comments", async () => {
+  it("writes and reads project config as strict JSON", async () => {
     const config: store.SenvProjectConfig = {
       version: "1.0",
       identities: { "id1": "encrypted" },
     };
     await store.writeProjectConfig(config);
-
-    // Manually inject comments to test the stripper
-    const p = store.getProjectConfigPath();
-    const raw = await fs.readFile(p, "utf-8");
-    const tampered = `// some comment\n/* block \n comment */\n` + raw + `\n// end comment`;
-    await fs.writeFile(p, tampered, "utf-8");
 
     const readConfig = await store.readProjectConfig();
     expect(readConfig).toEqual(config);

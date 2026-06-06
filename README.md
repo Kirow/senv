@@ -1,15 +1,15 @@
 # senv
 
-`senv` is a secure, decentralized environment variables manager built for the terminal. By utilizing a hybrid RSA/AES-GCM encryption architecture, `senv` allows teams to safely store encrypted environment configurations inside source control (`.senv.jsonc`), while maintaining unique local identities to restrict decryption access.
+`senv` is a secure, decentralized environment variables manager built for the terminal. By utilizing a hybrid RSA/AES-GCM encryption architecture, `senv` allows teams to safely store encrypted environment configurations inside source control (`.senv.json`), while maintaining unique local identities to restrict decryption access.
 
 > **Disclaimer:** This project and its underlying code (including the cryptography logic) were fully AI-generated. While standard cryptography algorithms and practices were used, the codebase has not been audited by a human security professional. Use at your own risk.
 
 ## How it Works
-Instead of maintaining `.env` files that cannot be safely committed, `senv` encrypts your environment payloads inside `.senv.jsonc`. 
+Instead of maintaining `.env` files that cannot be safely committed, `senv` encrypts your environment payloads inside `.senv.json`. 
 1. **AES-256-GCM** is used to encrypt the key-value payload.
 2. **RSA-2048** is used to encrypt the AES Data Encryption Key (DEK).
 
-Each user registers an RSA public key into `.senv.jsonc`. When variables are added, the CLI encrypts the payload for all authorized public keys. Your private keys are kept secure in your local keystore (`~/.config/senv/identity.json`) and are never committed.
+Each user registers an RSA public key into `.senv.json`. When variables are added, the CLI encrypts the payload for all authorized public keys. Your private keys are kept secure in your local keystore (`~/.config/senv/identity.json`) and are never committed.
 
 ## Installation
 
@@ -32,7 +32,7 @@ make install
 ## Usage
 
 ### 1. Initialize the Project
-Run this in the root of your project. It will generate a local RSA keypair (if one doesn't exist) and create `.senv.jsonc`.
+Run this in the root of your project. It will generate a local RSA keypair (if one doesn't exist) and create `.senv.json`.
 ```bash
 senv init
 ```
@@ -66,6 +66,9 @@ To allow another team member to access the variables, they must provide you with
 **Export your keys:**
 ```bash
 senv key export my-identity
+
+# Export decrypt-only access (private key only)
+senv key export my-identity --readonly
 ```
 
 **Register someone else's public key:**
@@ -74,9 +77,9 @@ senv register new-teammate-local "<PUBLIC_KEY_PEM_STRING>"
 ```
 
 ### 5. Git Merge Conflicts
-If multiple people edit `.senv.jsonc` simultaneously, use the migrate command to safely merge conflicting identity payloads:
+If multiple people edit `.senv.json` simultaneously, use the migrate command to safely merge conflicting identity payloads:
 ```bash
-senv migrate .senv.jsonc .senv.incoming.jsonc
+senv migrate .senv.json .senv.incoming.json
 ```
 
 ## Development and Testing

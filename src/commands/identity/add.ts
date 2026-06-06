@@ -10,7 +10,7 @@ export const identityAddCmd = new Command("add")
     try {
       const config = await store.readProjectConfig();
       if (config.identities[idName]) {
-        console.error(`Identity '${idName}' already exists in .senv.jsonc.`);
+        console.error(`Identity '${idName}' already exists in .senv.json.`);
         process.exit(1);
       }
       

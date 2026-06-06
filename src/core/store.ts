@@ -33,15 +33,6 @@ export interface SenvPayloadItem {
 
 export type SenvPayload = SenvPayloadItem[];
 
-function stripJsonComments(jsonc: string): string {
-  // Simple comment stripper: removes // ... and /* ... */
-  // Note: This naive regex might strip comments inside strings, but for our simple config it is sufficient.
-  // A robust solution would use a proper parser, but standard JSON format is acceptable post-mutation.
-  return jsonc
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/.*$/gm, "");
-}
-
 export async function getKeystorePath(customPath?: string): Promise<string> {
   if (customPath) {
     const dir = path.dirname(customPath);
@@ -94,20 +85,19 @@ export async function writeKeystore(keystore: Keystore, customPath?: string): Pr
 
 export function getProjectConfigPath(): string {
   const projDir = process.env.SENV_PROJECT_DIR || process.cwd();
-  return path.join(projDir, ".senv.jsonc");
+  return path.join(projDir, ".senv.json");
 }
 
 export async function readProjectConfig(): Promise<SenvProjectConfig> {
   try {
     const p = getProjectConfigPath();
     const content = await readFile(p, "utf-8");
-    const stripped = stripJsonComments(content);
-    return JSON.parse(stripped) as SenvProjectConfig;
+    return JSON.parse(content) as SenvProjectConfig;
   } catch (err: any) {
     if (err.code === "ENOENT") {
-      throw new Error(".senv.jsonc not found in the current directory.");
+      throw new Error(".senv.json not found in the current directory.");
     }
-    throw new Error(`Failed to read .senv.jsonc: ${err.message}`);
+    throw new Error(`Failed to read .senv.json: ${err.message}`);
   }
 }
 

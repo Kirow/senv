@@ -83,8 +83,15 @@ export function encodeKeyPairBase64(idName: string, publicKey: string, privateKe
 export function decodeKeyPairBase64(b64: string): { idName: string; publicKey: string; privateKey: string } {
   const data = Buffer.from(b64, "base64").toString("utf8");
   const parsed = JSON.parse(data);
-  if (!parsed.publicKey || !parsed.privateKey || !parsed.idName) {
+  const hasId = typeof parsed.idName === "string" && parsed.idName.length > 0;
+  const hasPublic = typeof parsed.publicKey === "string" && parsed.publicKey.length > 0;
+  const hasPrivate = typeof parsed.privateKey === "string" && parsed.privateKey.length > 0;
+  if (!hasId || (!hasPublic && !hasPrivate)) {
     throw new Error("Invalid keypair string.");
   }
-  return { idName: parsed.idName, publicKey: parsed.publicKey, privateKey: parsed.privateKey };
+  return {
+    idName: parsed.idName,
+    publicKey: typeof parsed.publicKey === "string" ? parsed.publicKey : "",
+    privateKey: typeof parsed.privateKey === "string" ? parsed.privateKey : "",
+  };
 }

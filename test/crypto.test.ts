@@ -69,6 +69,28 @@ describe("crypto operations", () => {
     expect(decoded.privateKey).toBe(privateKey);
   });
 
+  it("decodes partial keypair payloads with at least one key", () => {
+    const readOnly = Buffer.from(
+      JSON.stringify({ idName: "read-only", privateKey: "PRIV_ONLY" }),
+      "utf8"
+    ).toString("base64");
+
+    const pubOnly = Buffer.from(
+      JSON.stringify({ idName: "pub-only", publicKey: "PUB_ONLY" }),
+      "utf8"
+    ).toString("base64");
+
+    const decodedReadOnly = crypto.decodeKeyPairBase64(readOnly);
+    expect(decodedReadOnly.idName).toBe("read-only");
+    expect(decodedReadOnly.privateKey).toBe("PRIV_ONLY");
+    expect(decodedReadOnly.publicKey).toBe("");
+
+    const decodedPubOnly = crypto.decodeKeyPairBase64(pubOnly);
+    expect(decodedPubOnly.idName).toBe("pub-only");
+    expect(decodedPubOnly.publicKey).toBe("PUB_ONLY");
+    expect(decodedPubOnly.privateKey).toBe("");
+  });
+
   it("throws error when decoding invalid base64 keypair", () => {
     expect(() => {
       crypto.decodeKeyPairBase64("invalid_base_64!!!")
@@ -77,6 +99,11 @@ describe("crypto operations", () => {
     const badJson = Buffer.from(JSON.stringify({ bad: "data" })).toString("base64");
     expect(() => {
       crypto.decodeKeyPairBase64(badJson);
+    }).toThrow("Invalid keypair string.");
+
+    const noKeysJson = Buffer.from(JSON.stringify({ idName: "id-only" })).toString("base64");
+    expect(() => {
+      crypto.decodeKeyPairBase64(noKeysJson);
     }).toThrow("Invalid keypair string.");
   });
 });

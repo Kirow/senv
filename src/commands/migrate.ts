@@ -13,8 +13,8 @@ export const migrateCmd = new Command("migrate")
     try {
       const contentA = await fs.readFile(fileA, "utf-8");
       const contentB = await fs.readFile(fileB, "utf-8");
-      const configA = JSON.parse(contentA.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")) as SenvProjectConfig;
-      const configB = JSON.parse(contentB.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "")) as SenvProjectConfig;
+      const configA = JSON.parse(contentA) as SenvProjectConfig;
+      const configB = JSON.parse(contentB) as SenvProjectConfig;
 
       const projectKeystore = await store.getProjectKeystore(keystorePath);
 
