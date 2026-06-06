@@ -1,12 +1,8 @@
 import { Command } from "commander";
-import { getAccessiblePayloads } from "./utils";
+import { getAccessiblePayloads, isValidEnvName } from "./utils";
 
 function shellEscapeSingleQuoted(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-function isValidEnvName(name: string): boolean {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
 }
 
 export const exportCmd = new Command("export")
@@ -17,6 +13,7 @@ export const exportCmd = new Command("export")
     try {
       const payloads = await getAccessiblePayloads(env, keystorePath);
       const aggregated: Record<string, { value: string; identityName: string }> = {};
+      const lines: string[] = [];
 
       for (const { identityName, payload } of payloads) {
         for (const item of payload) {
@@ -31,8 +28,10 @@ export const exportCmd = new Command("export")
           throw new Error(`Invalid environment variable name '${key}'.`);
         }
         const escaped = shellEscapeSingleQuoted(data.value);
-        console.log(`export ${key}=${escaped}`);
+        lines.push(`export ${key}=${escaped}`);
       }
+
+      process.stdout.write(lines.join("\n") + (lines.length > 0 ? "\n" : ""));
     } catch (e: any) {
       console.error(e.message);
       process.exit(1);

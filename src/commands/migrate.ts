@@ -1,8 +1,9 @@
 import { Command } from "commander";
-import * as crypto from "../core/crypto";
+import * as senvCrypto from "../core/crypto";
 import * as store from "../core/store";
 import { type SenvProjectConfig } from "../core/store";
 import * as fs from "node:fs/promises";
+import * as path from "node:path";
 
 export const migrateCmd = new Command("migrate")
   .argument("<FILE_A>", "Primary file")
@@ -24,8 +25,8 @@ export const migrateCmd = new Command("migrate")
           console.log(`Identity '${idName}' added from ${fileB}.`);
         } else if (configA.identities[idName] !== encryptedB) {
           if (projectKeystore[idName] && projectKeystore[idName].privateKey) {
-            const payloadA = crypto.decryptPayload(configA.identities[idName], projectKeystore[idName].privateKey);
-            const payloadB = crypto.decryptPayload(encryptedB, projectKeystore[idName].privateKey);
+            const payloadA = senvCrypto.decryptPayload(configA.identities[idName], projectKeystore[idName].privateKey);
+            const payloadB = senvCrypto.decryptPayload(encryptedB, projectKeystore[idName].privateKey);
 
             const mapA = new Map(payloadA.map(i => [`${i.environment}:${i.key}`, i]));
             for (const itemB of payloadB) {
@@ -33,7 +34,7 @@ export const migrateCmd = new Command("migrate")
             }
 
             const mergedPayload = Array.from(mapA.values());
-            configA.identities[idName] = crypto.encryptPayload(mergedPayload, projectKeystore[idName].publicKey);
+            configA.identities[idName] = senvCrypto.encryptPayload(mergedPayload, projectKeystore[idName].publicKey);
             console.log(`Merged payloads for identity '${idName}'.`);
           } else {
             console.warn(`[WARN] Conflict for identity '${idName}' but missing private key. Cannot merge. Keeping ${fileA} version.`);
@@ -41,7 +42,9 @@ export const migrateCmd = new Command("migrate")
         }
       }
 
-      await fs.writeFile(fileA, JSON.stringify(configA, null, 2), "utf-8");
+      const tmpPath = fileA + ".tmp";
+      await fs.writeFile(tmpPath, JSON.stringify(configA, null, 2), { encoding: "utf-8", mode: 0o600 });
+      await fs.rename(tmpPath, fileA);
       console.log(`Migration complete. Merged into ${fileA}.`);
     } catch (e: any) {
       console.error("Migration failed:", e.message);

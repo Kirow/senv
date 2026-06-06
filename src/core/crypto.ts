@@ -75,6 +75,22 @@ export function decryptPayload(encryptedString: string, privateKey: string): Sen
   return JSON.parse(decrypted) as SenvPayload;
 }
 
+export function isValidPEM(key: string, type: "public" | "private"): boolean {
+  if (typeof key !== "string" || key.length === 0) {
+    return false;
+  }
+  try {
+    if (type === "public") {
+      crypto.createPublicKey(key);
+    } else {
+      crypto.createPrivateKey(key);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function encodeKeyPairBase64(idName: string, publicKey: string, privateKey: string): string {
   const data = JSON.stringify({ idName, publicKey, privateKey });
   return Buffer.from(data, "utf8").toString("base64");

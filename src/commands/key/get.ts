@@ -1,40 +1,36 @@
 import { Command } from "commander";
-import { getAccessiblePayloads } from "../utils";
+import { getAccessiblePayloads, getCommandOptions } from "../utils";
 
 export const keyGetCmd = new Command("get")
   .argument("<KEY>", "The key to retrieve")
   .description("Returns the decrypted plaintext value for a key")
   .action(async (targetKey, options, command) => {
-    const parentOpts = command.parent?.optsWithGlobals() || {};
-    const globalOpts = command.optsWithGlobals();
-    const env = globalOpts.env || parentOpts.env || "dev";
-    const keystorePath = globalOpts.keystore || parentOpts.keystore;
+    const { env, keystorePath } = getCommandOptions(command);
 
     try {
       const payloads = await getAccessiblePayloads(env, keystorePath);
-      let foundValue: string | null = null;
-      let foundIdentity: string | null = null;
+      const matches: { value: string; identityName: string }[] = [];
 
       for (const { identityName, payload } of payloads) {
         const item = payload.find((i) => i.key === targetKey);
         if (item) {
-          if (foundValue !== null) {
-            console.warn(
-              `[WARN] Conflict for key '${targetKey}': defined in '${foundIdentity}' and '${identityName}'. Using value from '${foundIdentity}'.`
-            );
-          } else {
-            foundValue = item.value;
-            foundIdentity = identityName;
-          }
+          matches.push({ value: item.value, identityName });
         }
       }
 
-      if (foundValue !== null) {
-        console.log(foundValue);
-      } else {
+      if (matches.length === 0) {
         console.error(`Key '${targetKey}' not found for environment '${env}'.`);
         process.exit(1);
       }
+
+      if (matches.length > 1) {
+        const all = matches.map((m) => m.identityName).join(", ");
+        console.warn(
+          `[WARN] Conflict for key '${targetKey}': defined in ${matches.length} identities (${all}). Using value from '${matches[0].identityName}'.`
+        );
+      }
+
+      console.log(matches[0].value);
     } catch (e: any) {
       console.error(e.message);
       process.exit(1);

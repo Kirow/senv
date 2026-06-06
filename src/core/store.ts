@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -33,14 +33,32 @@ export interface SenvPayloadItem {
 
 export type SenvPayload = SenvPayloadItem[];
 
+export const CURRENT_KEYSTORE_VERSION = "1.0";
+export const CURRENT_PROJECT_CONFIG_VERSION = "1.0";
+
+export function migrateKeystore(parsed: any): Keystore {
+  if (parsed && typeof parsed === "object" && typeof parsed.version === "string") {
+    if (parsed.version === CURRENT_KEYSTORE_VERSION) {
+      return parsed as Keystore;
+    }
+  }
+  throw new Error(`Unsupported keystore version. Expected '${CURRENT_KEYSTORE_VERSION}'.`);
+}
+
+async function atomicWriteFile(filePath: string, data: string, mode: number): Promise<void> {
+  const tmpPath = filePath + ".tmp";
+  await writeFile(tmpPath, data, { encoding: "utf-8", mode });
+  await rename(tmpPath, filePath);
+}
+
 export async function getKeystorePath(customPath?: string): Promise<string> {
   if (customPath) {
     const dir = path.dirname(customPath);
-    await mkdir(dir, { recursive: true });
+    await mkdir(dir, { recursive: true, mode: 0o700 });
     return customPath;
   }
   const configDir = process.env.SENV_CONFIG_DIR || path.join(os.homedir(), ".config", "senv");
-  await mkdir(configDir, { recursive: true });
+  await mkdir(configDir, { recursive: true, mode: 0o700 });
   return path.join(configDir, "identity.json");
 }
 
@@ -53,13 +71,10 @@ export async function readKeystore(customPath?: string): Promise<Keystore> {
     const p = await getKeystorePath(customPath);
     const content = await readFile(p, "utf-8");
     const parsed = JSON.parse(content);
-    if (parsed && typeof parsed === "object" && parsed.version === "1.0") {
-      return parsed as Keystore;
-    }
-    return { version: "1.0", projects: {} };
+    return migrateKeystore(parsed);
   } catch (err: any) {
     if (err.code === "ENOENT") {
-      return { version: "1.0", projects: {} };
+      return { version: CURRENT_KEYSTORE_VERSION, projects: {} };
     }
     throw new Error(`Failed to read keystore: ${err.message}`);
   }
@@ -80,7 +95,7 @@ export async function writeProjectKeystore(pks: KeystoreProjectStore, customPath
 
 export async function writeKeystore(keystore: Keystore, customPath?: string): Promise<void> {
   const p = await getKeystorePath(customPath);
-  await writeFile(p, JSON.stringify(keystore, null, 2), "utf-8");
+  await atomicWriteFile(p, JSON.stringify(keystore, null, 2), 0o600);
 }
 
 export function getProjectConfigPath(): string {
@@ -103,5 +118,5 @@ export async function readProjectConfig(): Promise<SenvProjectConfig> {
 
 export async function writeProjectConfig(config: SenvProjectConfig): Promise<void> {
   const p = getProjectConfigPath();
-  await writeFile(p, JSON.stringify(config, null, 2), "utf-8");
+  await atomicWriteFile(p, JSON.stringify(config, null, 2), 0o600);
 }

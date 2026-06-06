@@ -42,7 +42,24 @@ describe("store operations", () => {
   });
 
   it("handles missing .senv.json by throwing specific error", async () => {
-    expect(store.readProjectConfig()).rejects.toThrow(".senv.json not found");
+    await expect(store.readProjectConfig()).rejects.toThrow(".senv.json not found");
+  });
+
+  it("throws on unsupported keystore version", async () => {
+    const badPath = path.join(tempConfigDir, "identity.json");
+    await fs.writeFile(badPath, JSON.stringify({ version: "99.0", projects: {} }), "utf-8");
+    await expect(store.readKeystore()).rejects.toThrow(/Unsupported keystore version/);
+  });
+
+  it("writes keystore atomically with 0600 permissions", async () => {
+    const data: store.Keystore = {
+      version: "1.0",
+      projects: { "p1": { "id1": { publicKey: "P", privateKey: "X" } } },
+    };
+    await store.writeKeystore(data);
+    const stats = await fs.stat(path.join(tempConfigDir, "identity.json"));
+    const mode = stats.mode & 0o777;
+    expect(mode).toBe(0o600);
   });
 
   it("writes and reads project config as strict JSON", async () => {

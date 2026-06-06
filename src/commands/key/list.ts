@@ -1,30 +1,37 @@
 import { Command } from "commander";
-import { getAccessiblePayloads } from "../utils";
+import { getAccessiblePayloads, getCommandOptions } from "../utils";
+
+function mask(value: string): string {
+  if (value.length <= 8) return "***";
+  return value.slice(0, 1) + "***" + value.slice(-1);
+}
 
 export const keyListCmd = new Command("list")
   .description("Lists keys for the target environment with masked values")
   .action(async (options, command) => {
-    // commander passes options correctly, but we need the global env flag
-    // In commander nested commands, we can access globals by going up
-    const parentOpts = command.parent?.optsWithGlobals() || {};
-    const globalOpts = command.optsWithGlobals();
-    const env = globalOpts.env || parentOpts.env || "dev";
-    const keystorePath = globalOpts.keystore || parentOpts.keystore;
+    const { env, keystorePath } = getCommandOptions(command);
 
     try {
       const payloads = await getAccessiblePayloads(env, keystorePath);
-      const aggregated: Record<string, { value: string; identityName: string; count: number }> = {};
+      const aggregated: Record<string, { value: string; identityName: string; identities: string[] }> = {};
 
       for (const { identityName, payload } of payloads) {
         for (const item of payload) {
           if (aggregated[item.key]) {
-            aggregated[item.key].count++;
-            console.warn(
-              `[WARN] Conflict for key '${item.key}': defined in '${aggregated[item.key].identityName}' and '${identityName}'. Using value from '${aggregated[item.key].identityName}'.`
-            );
+            if (!aggregated[item.key].identities.includes(identityName)) {
+              aggregated[item.key].identities.push(identityName);
+            }
           } else {
-            aggregated[item.key] = { value: item.value, identityName, count: 1 };
+            aggregated[item.key] = { value: item.value, identityName, identities: [identityName] };
           }
+        }
+      }
+
+      for (const [key, data] of Object.entries(aggregated)) {
+        if (data.identities.length > 1) {
+          console.warn(
+            `[WARN] Conflict for key '${key}': defined in ${data.identities.length} identities (${data.identities.join(", ")}). Using value from '${data.identityName}'.`
+          );
         }
       }
 
@@ -35,8 +42,7 @@ export const keyListCmd = new Command("list")
 
       console.log(`\nKeys for environment '${env}':`);
       for (const [key, data] of Object.entries(aggregated)) {
-        const masked = data.value.length > 4 ? data.value.slice(0, 2) + "***" + data.value.slice(-2) : "***";
-        console.log(`${key}=${masked} (from: ${data.identityName})`);
+        console.log(`${key}=${mask(data.value)} (from: ${data.identityName})`);
       }
     } catch (e: any) {
       console.error(e.message);

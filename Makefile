@@ -8,7 +8,7 @@ test:
 
 install: build
 	@if [ -f "$(HOME)/.local/bin/senv" ]; then \
-		if ! "$(HOME)/.local/bin/senv" --help 2>&1 | grep -q "Secure environment variables manager"; then \
+		if ! "$(HOME)/.local/bin/senv" -V 2>&1 | grep -q "Secure ENV (senv)"; then \
 			echo "Error: $(HOME)/.local/bin/senv already exists but does not appear to be this senv application. Aborting to prevent name collision."; \
 			exit 1; \
 		fi; \

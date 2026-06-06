@@ -9,9 +9,6 @@
   "scripts": {
     "build": "bun build ./src/index.ts --compile --outfile senv"
   },
-  "bin": {
-    "senv": "./src/index.ts"
-  },
   "peerDependencies": {
     "typescript": "^5"
   },

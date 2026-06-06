@@ -21,7 +21,7 @@ const program = new Command();
 program
   .name("senv")
   .description("Secure environment variables manager using hybrid RSA/AES-GCM encryption")
-  .version("1.0.0");
+  .version("Secure ENV (senv), 1.0.0");
 
 program.option("-e, --env <env>", "Target environment", "dev");
 program.option("-k, --keystore <path>", "Custom path to identity.json keystore");
