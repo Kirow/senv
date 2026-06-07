@@ -1,5 +1,7 @@
 # senv
 
+[![coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/Kirow/senv/main/badges/coverage.json)](https://github.com/Kirow/senv/actions/workflows/ci.yml)
+
 `senv` is a secure, decentralized environment variables manager built for the terminal. By utilizing a hybrid RSA/AES-GCM encryption architecture, `senv` allows teams to safely store encrypted environment configurations inside source control (`.senv.json`), while maintaining unique local identities to restrict decryption access.
 
 > **Disclaimer:** This project and its underlying code (including the cryptography logic) were fully AI-generated using Google Gemini 3.1 Pro, OpenAI Codex 5.3, and MiniMax M3. While standard cryptography algorithms and practices were used, the codebase has not been audited by a human security professional. Use at your own risk.
