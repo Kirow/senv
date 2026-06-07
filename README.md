@@ -103,6 +103,13 @@ If multiple people edit `.senv.json` simultaneously, use the merge command to sa
 senv merge .senv.json .senv.incoming.json
 ```
 
+### 6. Agent Skill
+Install the senv agent skill so AI tools know how to use the CLI in this project:
+```bash
+senv install skill
+```
+This creates or replaces `.agents/skills/secure-env-tool/SKILL.md`.
+
 ## Development and Testing
 To run the automated test suite covering filesystem operations, cryptography, and integration edge cases:
 ```bash

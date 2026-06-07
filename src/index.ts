@@ -17,6 +17,8 @@ import { keyGetCmd } from "./commands/key/get";
 import { keyAddCmd } from "./commands/key/add";
 import { keyRmCmd } from "./commands/key/rm";
 
+import { installSkillCmd } from "./commands/install/skill";
+
 const program = new Command();
 
 program
@@ -45,5 +47,9 @@ keyGroup.addCommand(keyGetCmd);
 keyGroup.addCommand(keyAddCmd);
 keyGroup.addCommand(keyRmCmd);
 program.addCommand(keyGroup);
+
+const installGroup = new Command("install").description("Install project integrations");
+installGroup.addCommand(installSkillCmd);
+program.addCommand(installGroup);
 
 program.parse(process.argv);

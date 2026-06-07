@@ -683,4 +683,21 @@ describe("CLI operations", () => {
     expect(get.exitCode).toBe(0);
     expect(get.stdout.toString().trim()).toBe("v");
   });
+
+  it("installs the agent skill into .agents/skills/secure-env-tool/SKILL.md", async () => {
+    const res = await runCLI("install", "skill");
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout.toString()).toContain("Installed skill to");
+
+    const dest = path.join(tempProjectDir, ".agents", "skills", "secure-env-tool", "SKILL.md");
+    expect(await fs.exists(dest)).toBe(true);
+
+    const installed = await fs.readFile(dest, "utf-8");
+    const source = await fs.readFile(path.join(import.meta.dir, "..", "skill", "SKILL.md"), "utf-8");
+    expect(installed).toBe(source);
+    expect(installed).toContain("name: secure-env-tool");
+
+    const res2 = await runCLI("install", "skill");
+    expect(res2.exitCode).toBe(0);
+  });
 });

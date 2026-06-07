@@ -47,6 +47,8 @@ src/
       add.ts, list.ts, rm.ts, export.ts, import.ts
     key/
       add.ts, get.ts, list.ts, rm.ts
+    install/
+      skill.ts               # `senv install skill` → .agents/skills/secure-env-tool/SKILL.md
 test/
   crypto.test.ts           # Crypto primitives + base64 codec
   store.test.ts            # Keystore I/O, atomic writes, mode 0600, version validation
@@ -54,6 +56,8 @@ test/
   cli.test.ts              # End-to-end via `bun $` spawning `bun run ./src/index.ts`
 Makefile                   # build-js / build-standalone / install-js / install-standalone
 README.md                  # User-facing docs
+skill/
+  SKILL.md                 # Agent skill source (installed via `senv install skill`)
 ```
 
 ## Conventions
