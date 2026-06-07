@@ -3,6 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 import { $ } from "bun";
+import { VERSION, GITHUB_URL } from "../src/version";
 
 describe("CLI operations", () => {
   let tempConfigDir: string;
@@ -338,8 +339,8 @@ describe("CLI operations", () => {
     expect(res.exitCode).toBe(0);
     const out = res.stdout.toString().trim();
     expect(out).toContain("Secure ENV (senv)");
-    expect(out).toContain("1.0.0");
-    expect(out).toContain("https://github.com/Kirow/senv/tree/main");
+    expect(out).toContain(VERSION);
+    expect(out).toContain(GITHUB_URL);
   });
 
   it("handles merge between two files", async () => {

@@ -18,7 +18,21 @@ To allow another team member to access a given identity's secrets, share that id
 
 ## Installation
 
-### Prerequisites
+### Quick Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Kirow/senv/refs/heads/main/scripts/install.sh | sh
+```
+
+Downloads the latest release from GitHub, verifies SHA256 checksums, and installs to `~/.local/bin/senv`. If [Bun](https://bun.sh/) is on your `PATH`, the small bundled JS build is used (~60 KB); otherwise a standalone binary is downloaded for your OS/arch (~60 MB, no Bun required). Requires `curl`.
+
+Pin a version: `SENV_VERSION=0.1.0 curl -fsSL ... | sh`
+
+Custom install dir: `SENV_INSTALL_DIR=/usr/local/bin curl -fsSL ... | sh`
+
+*(Make sure `~/.local/bin` is in your `$PATH`!)*
+
+### Prerequisites (build from source)
 - [Bun](https://bun.sh/) is required to build from source. The bundled JS install also requires Bun at runtime; the standalone binary does not.
 
 ### Build from Source
@@ -47,6 +61,12 @@ make build-standalone   # standalone binary → dist/senv-standalone
 make build-all          # both
 ```
 *(Make sure `~/.local/bin` is in your `$PATH`!)*
+
+### Releasing (maintainers)
+
+1. Bump `VERSION` in `src/version.ts`
+2. Commit and tag: `git tag v0.1.0 && git push origin v0.1.0`
+3. GitHub Actions builds all platform binaries, generates `checksums.sha256`, and publishes the release
 
 ## Usage
 
