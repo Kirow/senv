@@ -143,5 +143,31 @@ fi
 echo ""
 git status
 echo ""
-echo "Experiment complete: merge conflict on shared identity in .senv.json"
+
+echo "==> Phase 3: Resolve conflict with senv merge (user B, on user-B branch)..."
+senv_b merge
+
+assert_eq "user-A reads baseline key after merge" "alpha" "$(senv_a key get USER_A_SECRET)"
+assert_eq "user-A reads branch key after merge" "from-A" "$(senv_a key get USER_A_BRANCH)"
+assert_eq "user-A reads shared baseline after merge" "shared-initial" "$(senv_a key get SHARED_BASE)"
+assert_eq "user-A reads shared API_URL after merge" "url-from-A-branch" "$(senv_a key get API_URL)"
+assert_eq "user-B reads baseline key after merge" "bravo" "$(senv_b key get USER_B_SECRET)"
+assert_eq "user-B reads branch key after merge" "from-B" "$(senv_b key get USER_B_BRANCH)"
+assert_eq "user-B reads shared baseline after merge" "shared-initial" "$(senv_b key get SHARED_BASE)"
+assert_eq "user-B reads shared API_URL after merge" "url-from-A-branch" "$(senv_b key get API_URL)"
+assert_exit "user-A cannot read user-B private key after merge" 1 senv_a key get USER_B_SECRET
+assert_exit "user-B cannot read user-A private key after merge" 1 senv_b key get USER_A_SECRET
+
+if grep -q '<<<<<<<' .senv.json; then
+  echo "FAIL: conflict markers still present after senv merge" >&2
+  exit 1
+fi
+
+git add .senv.json
+git commit -m "Resolved .senv.json merge conflict with senv merge"
+
+echo ""
+git status
+echo ""
+echo "Experiment complete: merge conflict resolved via senv merge"
 echo "Inspect: $EXP"

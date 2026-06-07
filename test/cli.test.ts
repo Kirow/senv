@@ -255,24 +255,33 @@ describe("CLI operations", () => {
     expect(out).toContain("1.0.0");
   });
 
+  async function runCLIWithKeystore(user: string, keystorePath: string, ...args: string[]) {
+    const allArgs = [...args, "--keystore", keystorePath];
+    return await $`bun run ./src/index.ts ${allArgs}`
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir,
+        SENV_PROJECT_DIR: tempProjectDir,
+        USER: user,
+      })
+      .nothrow()
+      .quiet();
+  }
+
   it("handles merge between two files", async () => {
     await runCLI("init");
     await runCLI("key", "add", "testuser-local", "KEY_A", "VAL_A");
 
-    // Copy to file B
     const fileA = path.join(tempProjectDir, ".senv.json");
     const fileB = path.join(tempProjectDir, ".senv.b.json");
     await fs.copyFile(fileA, fileB);
 
-    // Mutate file A
     await runCLI("key", "rm", "testuser-local", "KEY_A");
     await runCLI("key", "add", "testuser-local", "KEY_B", "VAL_B");
 
-    // Migrate fileB (has KEY_A) into fileA (has KEY_B)
     const mergeRes = await runCLI("merge", fileA, fileB);
     expect(mergeRes.exitCode).toBe(0);
 
-    // Now get KEY_A and KEY_B from file A
     const getB = await runCLI("key", "get", "KEY_B");
     expect(getB.exitCode).toBe(0);
     expect(getB.stdout.toString().trim()).toBe("VAL_B");
@@ -280,6 +289,162 @@ describe("CLI operations", () => {
     const getA = await runCLI("key", "get", "KEY_A");
     expect(getA.exitCode).toBe(0);
     expect(getA.stdout.toString().trim()).toBe("VAL_A");
+  });
+
+  it("resolves conflict markers via senv merge with no args", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "KEY_THEIRS", "val_theirs");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const baseConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const theirsBlob = baseConfig.identities["testuser-local"];
+
+    await runCLI("key", "add", "testuser-local", "KEY_OURS", "val_ours");
+    const headConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const oursBlob = headConfig.identities["testuser-local"];
+
+    const conflicted = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "testuser-local": "${oursBlob}"
+=======
+    "testuser-local": "${theirsBlob}"
+>>>>>>> branch
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const mergeRes = await runCLI("merge");
+    expect(mergeRes.exitCode).toBe(0);
+
+    const resolved = await fs.readFile(configPath, "utf-8");
+    expect(resolved).not.toContain("<<<<<<<");
+
+    const getOurs = await runCLI("key", "get", "KEY_OURS");
+    expect(getOurs.stdout.toString().trim()).toBe("val_ours");
+
+    const getTheirs = await runCLI("key", "get", "KEY_THEIRS");
+    expect(getTheirs.stdout.toString().trim()).toBe("val_theirs");
+  });
+
+  it("resolves conflict markers from git root via senv merge", async () => {
+    const emptyTemplate = path.join(import.meta.dir, "fixtures", "empty-git-template");
+    const gitInit = await $`git init -b main --template=${emptyTemplate}`
+      .cwd(tempProjectDir)
+      .nothrow()
+      .quiet();
+    if (gitInit.exitCode !== 0) {
+      return;
+    }
+
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "KEY_THEIRS", "val_theirs");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const baseConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const theirsBlob = baseConfig.identities["testuser-local"];
+
+    await runCLI("key", "add", "testuser-local", "KEY_OURS", "val_ours");
+    const headConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const oursBlob = headConfig.identities["testuser-local"];
+
+    const conflicted = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "testuser-local": "${oursBlob}"
+=======
+    "testuser-local": "${theirsBlob}"
+>>>>>>> branch
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const mergeRes = await runCLI("merge");
+    expect(mergeRes.exitCode).toBe(0);
+    expect((await fs.readFile(configPath, "utf-8"))).not.toContain("<<<<<<<");
+  });
+
+  it("resolves two-user shared identity merge conflict", async () => {
+    const keystoreA = path.join(tempProjectDir, "user-A.json");
+    const keystoreB = path.join(tempProjectDir, "user-B.json");
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const sharedId = "team-shared";
+
+    await runCLIWithKeystore("user-A", keystoreA, "init");
+    await runCLIWithKeystore("user-A", keystoreA, "key", "add", "user-A-local", "USER_A_SECRET", "alpha");
+    await runCLIWithKeystore("user-A", keystoreA, "identity", "add", sharedId);
+    await runCLIWithKeystore("user-A", keystoreA, "key", "add", sharedId, "SHARED_BASE", "shared-initial");
+    await runCLIWithKeystore("user-A", keystoreA, "key", "add", sharedId, "API_URL", "shared-url-v0");
+
+    await runCLIWithKeystore("user-B", keystoreB, "identity", "add", "user-B-local");
+    await runCLIWithKeystore("user-B", keystoreB, "key", "add", "user-B-local", "USER_B_SECRET", "bravo");
+
+    const exportRes = await runCLIWithKeystore("user-A", keystoreA, "identity", "export", sharedId);
+    const b64 = exportRes.stdout.toString().trim();
+    await runCLIWithKeystore("user-B", keystoreB, "identity", "import", b64, "-y");
+
+    const baselineContent = await fs.readFile(configPath, "utf-8");
+
+    await runCLIWithKeystore("user-B", keystoreB, "key", "add", "user-B-local", "USER_B_BRANCH", "from-B");
+    await runCLIWithKeystore("user-B", keystoreB, "key", "add", sharedId, "API_URL", "url-from-B-branch");
+    const headConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+
+    await fs.writeFile(configPath, baselineContent);
+    await runCLIWithKeystore("user-A", keystoreA, "key", "add", "user-A-local", "USER_A_BRANCH", "from-A");
+    await runCLIWithKeystore("user-A", keystoreA, "key", "add", sharedId, "API_URL", "url-from-A-branch");
+    const theirConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+
+    const conflicted = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "user-A-local": "${headConfig.identities["user-A-local"]}",
+    "${sharedId}": "${headConfig.identities[sharedId]}",
+    "user-B-local": "${headConfig.identities["user-B-local"]}"
+=======
+    "user-A-local": "${theirConfig.identities["user-A-local"]}",
+    "${sharedId}": "${theirConfig.identities[sharedId]}",
+    "user-B-local": "${theirConfig.identities["user-B-local"]}"
+>>>>>>> user-A
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const mergeRes = await runCLIWithKeystore("user-B", keystoreB, "merge");
+    expect(mergeRes.exitCode).toBe(0);
+    expect((await fs.readFile(configPath, "utf-8"))).not.toContain("<<<<<<<");
+
+    const aSecret = await runCLIWithKeystore("user-A", keystoreA, "key", "get", "USER_A_SECRET");
+    expect(aSecret.stdout.toString().trim()).toBe("alpha");
+
+    const aBranch = await runCLIWithKeystore("user-A", keystoreA, "key", "get", "USER_A_BRANCH");
+    expect(aBranch.stdout.toString().trim()).toBe("from-A");
+
+    const aShared = await runCLIWithKeystore("user-A", keystoreA, "key", "get", "SHARED_BASE");
+    expect(aShared.stdout.toString().trim()).toBe("shared-initial");
+
+    const aUrl = await runCLIWithKeystore("user-A", keystoreA, "key", "get", "API_URL");
+    expect(aUrl.stdout.toString().trim()).toBe("url-from-A-branch");
+
+    const bSecret = await runCLIWithKeystore("user-B", keystoreB, "key", "get", "USER_B_SECRET");
+    expect(bSecret.stdout.toString().trim()).toBe("bravo");
+
+    const bBranch = await runCLIWithKeystore("user-B", keystoreB, "key", "get", "USER_B_BRANCH");
+    expect(bBranch.stdout.toString().trim()).toBe("from-B");
+
+    const bShared = await runCLIWithKeystore("user-B", keystoreB, "key", "get", "SHARED_BASE");
+    expect(bShared.stdout.toString().trim()).toBe("shared-initial");
+
+    const bUrl = await runCLIWithKeystore("user-B", keystoreB, "key", "get", "API_URL");
+    expect(bUrl.stdout.toString().trim()).toBe("url-from-A-branch");
+
+    const crossAB = await runCLIWithKeystore("user-A", keystoreA, "key", "get", "USER_B_SECRET");
+    expect(crossAB.exitCode).toBe(1);
+
+    const crossBA = await runCLIWithKeystore("user-B", keystoreB, "key", "get", "USER_A_SECRET");
+    expect(crossBA.exitCode).toBe(1);
   });
 
   it("supports the --keystore flag to override default location", async () => {
