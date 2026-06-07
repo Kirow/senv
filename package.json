@@ -7,7 +7,10 @@
     "@types/bun": "latest"
   },
   "scripts": {
-    "build": "bun build ./src/index.ts --compile --outfile senv"
+    "build": "bun run build:js",
+    "build:js": "bun build ./src/index.ts --target=bun --minify --outfile dist/senv && chmod +x dist/senv",
+    "build:standalone": "bun build ./src/index.ts --compile --minify --outfile dist/senv-standalone",
+    "build:all": "bun run build:js && bun run build:standalone"
   },
   "peerDependencies": {
     "typescript": "^5"

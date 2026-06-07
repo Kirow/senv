@@ -19,18 +19,32 @@ To allow another team member to access a given identity's secrets, share that id
 ## Installation
 
 ### Prerequisites
-- [Bun](https://bun.sh/) must be installed on your machine.
+- [Bun](https://bun.sh/) is required to build from source. The bundled JS install also requires Bun at runtime; the standalone binary does not.
 
 ### Build from Source
-Clone the repository and build/install the standalone binary using the included Makefile:
+Clone the repository and pick an install variant:
 
 ```bash
 git clone https://github.com/your-username/senv.git
 cd senv
 bun install
+```
 
-# Compile and safely install into ~/.local/bin/senv
-make install
+**Bundled JS (~60 KB, requires Bun at runtime):**
+```bash
+make install          # or: make install-js
+```
+
+**Standalone binary (~60 MB, no Bun required at runtime):**
+```bash
+make install-standalone
+```
+
+Build artifacts only (without installing):
+```bash
+make build              # bundled JS → dist/senv
+make build-standalone   # standalone binary → dist/senv-standalone
+make build-all          # both
 ```
 *(Make sure `~/.local/bin` is in your `$PATH`!)*
 

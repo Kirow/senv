@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 EXP="$ROOT/experiment"
-SENV="$ROOT/senv"
+SENV="$ROOT/dist/senv"
 SHARED_ID="team-shared"
 
 senv_a() {

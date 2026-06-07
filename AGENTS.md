@@ -21,7 +21,7 @@ A terminal-based, decentralized encrypted environment-variable manager. Each use
 
 ## Tech stack
 
-- **Runtime:** [Bun](https://bun.sh/) `1.3.x` (uses `bun:test`, `bun build --compile`, `bun $`).
+- **Runtime:** [Bun](https://bun.sh/) `1.3.x` (uses `bun:test`, `bun build --target=bun` / `--compile`, `bun $`). Two install artifacts: bundled JS (`dist/senv`, ~60 KB, `#!/usr/bin/env bun` shebang, Bun required at runtime) and standalone binary (`dist/senv-standalone`, ~60 MB, no Bun at runtime).
 - **Language:** TypeScript with `module: "Preserve"`, `moduleResolution: "bundler"`, `verbatimModuleSyntax: true`, strict mode. `tsconfig.json` is bun-shaped.
 - **CLI framework:** `commander` v15.
 - **Crypto:** Node's built-in `node:crypto` (RSA, AES-GCM). No third-party crypto libs.
@@ -52,7 +52,7 @@ test/
   store.test.ts            # Keystore I/O, atomic writes, mode 0600, version validation
   conflict.test.ts         # Conflict marker parsing, single + multi-block, owner matching
   cli.test.ts              # End-to-end via `bun $` spawning `bun run ./src/index.ts`
-Makefile                   # build / test / install (installs to ~/.local/bin/senv)
+Makefile                   # build-js / build-standalone / install-js / install-standalone
 README.md                  # User-facing docs
 ```
 
@@ -79,14 +79,18 @@ README.md                  # User-facing docs
 # Run all tests (crypto, store, conflict, CLI integration)
 bun test
 
-# Build standalone binary to ./senv
-bun run build
+# Bundle CLI to dist/senv (~60 KB); default `bun run build` / `make build`
+bun run build:js
 
-# Build + install to ~/.local/bin/senv (refuses to overwrite a non-senv binary)
-make install
+# Standalone binary to dist/senv-standalone (~60 MB)
+bun run build:standalone
+
+# Install bundled JS or standalone binary to ~/.local/bin/senv
+make install          # JS (needs Bun at runtime)
+make install-standalone
 
 # Type-check (bun handles this at build time; use `bun build` to verify)
-bun build ./src/index.ts --compile --outfile /tmp/senv-check
+bun build ./src/index.ts --target=bun --outfile /tmp/senv-check
 ```
 
 ## Environment variables (consumed by the CLI)
@@ -126,4 +130,4 @@ These are read in `core/store.ts` (`getKeystorePath`, `getProjectDir`, `getProje
 - Don't hardcode version strings — read from `src/version.ts` and the `CURRENT_*_VERSION` constants in `core/store.ts`.
 - Don't change crypto defaults (RSA-2048, AES-256-GCM, OAEP/SHA-256) without a security review.
 - Don't add `npm`/`pnpm`/`yarn` artifacts; this is a bun-only project.
-- Don't commit the `/senv` binary; `.gitignore` excludes it.
+- Don't commit `dist/`; `.gitignore` excludes it.
