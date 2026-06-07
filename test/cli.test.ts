@@ -154,7 +154,7 @@ describe("CLI operations", () => {
 
     const exportRes = await runCLI("use");
     expect(exportRes.exitCode).toBe(0);
-    expect(exportRes.stdout.toString()).toContain("export SAFE_KEY='quo'\\''te $(uname) `id` \"x\"'");
+    expect(exportRes.stdout.toString()).toContain('export SAFE_KEY=$\'quo\\\'te $(uname) `id` "x"\'');
 
     const badAddRes = await runCLI("key", "add", "testuser-local", "BAD-KEY", "oops");
     expect(badAddRes.exitCode).toBe(1);
@@ -494,5 +494,26 @@ describe("CLI operations", () => {
     expect(initRes.stdout.toString()).toContain("Identity 'John-Doe-ops-acme-local' added.");
   });
 
-  it.todo("use safely handles multiline secret values");
+  it("use safely handles multiline secret values", async () => {
+    await runCLI("init");
+    const multiline = "line1\nline2\nquo'te";
+    await runCLI("key", "add", "testuser-local", "MULTI_KEY", multiline);
+
+    const useRes = await runCLI("use");
+    expect(useRes.exitCode).toBe(0);
+    expect(useRes.stdout.toString()).toBe("export MULTI_KEY=$'line1\\nline2\\nquo\\'te'\n");
+
+    const evalRes = await $`bash -c ${`eval $(bun run ./src/index.ts use); printf %s "$MULTI_KEY"`}`
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir,
+        SENV_PROJECT_DIR: tempProjectDir,
+        USER: "testuser",
+      })
+      .nothrow()
+      .quiet();
+
+    expect(evalRes.exitCode).toBe(0);
+    expect(evalRes.stdout.toString()).toBe(multiline);
+  });
 });

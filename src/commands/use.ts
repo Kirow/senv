@@ -1,8 +1,14 @@
 import { Command } from "commander";
 import { getAccessiblePayloads, isValidEnvName } from "./utils";
 
-function shellEscapeSingleQuoted(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`;
+function shellEscapeAnsiC(value: string): string {
+  const escaped = value
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, "\\n")
+    .replace(/\r/g, "\\r")
+    .replace(/\t/g, "\\t");
+  return `$'${escaped}'`;
 }
 
 export const useCmd = new Command("use")
@@ -27,7 +33,7 @@ export const useCmd = new Command("use")
         if (!isValidEnvName(key)) {
           throw new Error(`Invalid environment variable name '${key}'.`);
         }
-        const escaped = shellEscapeSingleQuoted(data.value);
+        const escaped = shellEscapeAnsiC(data.value);
         lines.push(`export ${key}=${escaped}`);
       }
 
