@@ -31,11 +31,16 @@ export const keyAddCmd = new Command("add")
       const projectKeystore = await store.getProjectKeystore(keystorePath);
 
       if (!config.identities[idName]) {
-        console.error(`Identity '${idName}' not found in .senv.json.`);
+        console.error(`Identity '${idName}' is missing from .senv.json.`);
         process.exit(1);
       }
 
-      if (!projectKeystore[idName] || !projectKeystore[idName].privateKey) {
+      if (!projectKeystore[idName]) {
+        console.error(`Identity '${idName}' has no entry in local keystore; cannot add keys.`);
+        process.exit(1);
+      }
+
+      if (!projectKeystore[idName].privateKey) {
         console.error(`Cannot add to '${idName}': missing private key in local keystore to decrypt existing payload.`);
         process.exit(1);
       }

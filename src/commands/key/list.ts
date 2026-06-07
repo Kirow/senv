@@ -7,15 +7,18 @@ function mask(value: string): string {
 }
 
 export const keyListCmd = new Command("list")
+  .option("-i, --identity <name>", "Restrict output to a single identity")
   .description("Lists keys for the target environment with masked values")
   .action(async (options, command) => {
     const { env, keystorePath } = getCommandOptions(command);
+    const wantedIdentity = options.identity as string | undefined;
 
     try {
       const payloads = await getAccessiblePayloads(env, keystorePath);
       const aggregated: Record<string, { value: string; identityName: string; identities: string[] }> = {};
 
       for (const { identityName, payload } of payloads) {
+        if (wantedIdentity && identityName !== wantedIdentity) continue;
         for (const item of payload) {
           if (aggregated[item.key]) {
             if (!aggregated[item.key].identities.includes(identityName)) {
@@ -27,16 +30,22 @@ export const keyListCmd = new Command("list")
         }
       }
 
-      for (const [key, data] of Object.entries(aggregated)) {
-        if (data.identities.length > 1) {
-          console.warn(
-            `[WARN] Conflict for key '${key}': defined in ${data.identities.length} identities (${data.identities.join(", ")}). Using value from '${data.identityName}'.`
-          );
+      if (!wantedIdentity) {
+        for (const [key, data] of Object.entries(aggregated)) {
+          if (data.identities.length > 1) {
+            console.warn(
+              `[WARN] Conflict for key '${key}': defined in ${data.identities.length} identities (${data.identities.join(", ")}). Showing value from '${data.identityName}'. Pass -i/--identity to disambiguate.`
+            );
+          }
         }
       }
 
       if (Object.keys(aggregated).length === 0) {
-        console.log(`No keys found for environment '${env}'.`);
+        if (wantedIdentity) {
+          console.log(`No keys found for environment '${env}' in identity '${wantedIdentity}'.`);
+        } else {
+          console.log(`No keys found for environment '${env}'.`);
+        }
         return;
       }
 

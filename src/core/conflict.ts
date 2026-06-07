@@ -15,6 +15,8 @@ function wrapIdentitiesFragment(fragment: string, version: string): SenvProjectC
   return JSON.parse(wrapped) as SenvProjectConfig;
 }
 
+const CONFLICT_BLOCK_RE = /<<<<<<<[^\n]*\n([\s\S]*?)^=======\n([\s\S]*?)^>>>>>>>[ \t]*([^\n]*)\n?/gm;
+
 export function parseGitConflictSenv(content: string): {
   ours: SenvProjectConfig;
   theirs: SenvProjectConfig;
@@ -24,19 +26,41 @@ export function parseGitConflictSenv(content: string): {
     throw new Error("No git conflict markers found in file.");
   }
 
-  const conflictRegex = /^([\s\S]*?)<<<<<<<[^\n]*\n([\s\S]*?)^=======\n([\s\S]*?)^>>>>>>>[ \t]*([^\n]*)\n?([\s\S]*)$/m;
-  const match = content.match(conflictRegex);
-  if (!match) {
+  const firstPrefixMatch = content.match(/^([\s\S]*?)<<<<<<</m);
+  const prefix = firstPrefixMatch ? firstPrefixMatch[1]! : "";
+  const version = extractVersion(prefix);
+
+  let oursMerged: SenvProjectConfig = wrapIdentitiesFragment("", version);
+  let theirsMerged: SenvProjectConfig = wrapIdentitiesFragment("", version);
+  let lastLabel = "";
+  let matched = 0;
+
+  for (const m of content.matchAll(CONFLICT_BLOCK_RE)) {
+    const oursFragment = m[1] ?? "";
+    const theirsFragment = m[2] ?? "";
+    const label = (m[3] ?? "").trim();
+    const oursBlock = wrapIdentitiesFragment(oursFragment, version);
+    const theirsBlock = wrapIdentitiesFragment(theirsFragment, version);
+    oursMerged = {
+      ...oursMerged,
+      identities: { ...oursMerged.identities, ...oursBlock.identities },
+    };
+    theirsMerged = {
+      ...theirsMerged,
+      identities: { ...theirsMerged.identities, ...theirsBlock.identities },
+    };
+    lastLabel = label;
+    matched += 1;
+  }
+
+  if (matched === 0) {
     throw new Error("Failed to parse git conflict markers.");
   }
 
-  const [, prefix, oursFragment, theirsFragment, theirsLabel] = match;
-  const version = extractVersion(prefix!);
-
   return {
-    ours: wrapIdentitiesFragment(oursFragment!, version),
-    theirs: wrapIdentitiesFragment(theirsFragment!, version),
-    theirsLabel: theirsLabel!.trim(),
+    ours: oursMerged,
+    theirs: theirsMerged,
+    theirsLabel: lastLabel,
   };
 }
 

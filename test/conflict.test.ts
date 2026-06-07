@@ -62,4 +62,52 @@ describe("conflict parser", () => {
       "No git conflict markers found in file."
     );
   });
+
+  it("parses two conflict blocks in one file and merges them", () => {
+    const TWO_BLOCKS = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "alice-local": "blob-ours-1",
+=======
+    "alice-local": "blob-theirs-1",
+>>>>>>> feature
+    "bob-local": "blob-ours-2",
+  }
+}
+<<<<<<< HEAD
+    "bob-local": "blob-ours-2b"
+=======
+    "bob-local": "blob-theirs-2b"
+>>>>>>> feature
+`;
+    const { ours, theirs, theirsLabel } = parseGitConflictSenv(TWO_BLOCKS);
+    expect(theirsLabel).toBe("feature");
+    expect(ours.identities["alice-local"]).toBe("blob-ours-1");
+    expect(theirs.identities["alice-local"]).toBe("blob-theirs-1");
+    expect(ours.identities["bob-local"]).toBe("blob-ours-2b");
+    expect(theirs.identities["bob-local"]).toBe("blob-theirs-2b");
+  });
+
+  it("parses conflict block with no trailing newline at end of file", () => {
+    const NO_TRAILING = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "alice-local": "blob-ours"
+=======
+    "alice-local": "blob-theirs"
+>>>>>>> feature
+  }
+}`;
+    const { ours, theirs } = parseGitConflictSenv(NO_TRAILING);
+    expect(ours.identities["alice-local"]).toBe("blob-ours");
+    expect(theirs.identities["alice-local"]).toBe("blob-theirs");
+  });
+
+  it("pickConflictBlobWithoutPrivateKey returns ours when idName has no -local suffix", () => {
+    expect(
+      pickConflictBlobWithoutPrivateKey("team-shared", "blob-ours", "blob-theirs", "user-A")
+    ).toBe("blob-ours");
+  });
 });

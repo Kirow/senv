@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { getAccessiblePayloads, isValidEnvName } from "./utils";
+import { getAccessiblePayloads, getCommandOptions, isValidEnvName } from "./utils";
 
 function shellEscapeAnsiC(value: string): string {
   const escaped = value
@@ -14,8 +14,7 @@ function shellEscapeAnsiC(value: string): string {
 export const useCmd = new Command("use")
   .description("Outputs export statements for standard shell usage: eval $(senv use)")
   .action(async (options, command) => {
-    const env = command.optsWithGlobals().env;
-    const keystorePath = command.optsWithGlobals().keystore;
+    const { env, keystorePath } = getCommandOptions(command);
     try {
       const payloads = await getAccessiblePayloads(env, keystorePath);
       const aggregated: Record<string, { value: string; identityName: string }> = {};

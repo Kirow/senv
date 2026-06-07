@@ -106,4 +106,33 @@ describe("crypto operations", () => {
       crypto.decodeKeyPairBase64(noKeysJson);
     }).toThrow("Invalid keypair string.");
   });
+
+  it("roundtrips non-ASCII values through encrypt/decrypt", () => {
+    const { publicKey, privateKey } = crypto.generateRSAKeyPair();
+    const payload: SenvPayload = [
+      { key: "GREETING", value: "héllo wörld 你好 🚀", environment: "dev" },
+    ];
+    const enc = crypto.encryptPayload(payload, publicKey);
+    const dec = crypto.decryptPayload(enc, privateKey);
+    expect(dec).toEqual(payload);
+  });
+
+  it("roundtrips a value at the 16KB boundary", () => {
+    const { publicKey, privateKey } = crypto.generateRSAKeyPair();
+    const big = "x".repeat(16 * 1024);
+    const payload: SenvPayload = [{ key: "BIG", value: big, environment: "dev" }];
+    const enc = crypto.encryptPayload(payload, publicKey);
+    const dec = crypto.decryptPayload(enc, privateKey);
+    expect(dec[0]!.value.length).toBe(16 * 1024);
+  });
+
+  it("isValidPEM rejects empty string", () => {
+    expect(crypto.isValidPEM("", "public")).toBe(false);
+    expect(crypto.isValidPEM("", "private")).toBe(false);
+  });
+
+  it("isValidPEM rejects forgeable BEGIN header with garbage body", () => {
+    const forged = "-----BEGIN PUBLIC KEY-----\nNOT_A_REAL_KEY\n-----END PUBLIC KEY-----\n";
+    expect(crypto.isValidPEM(forged, "public")).toBe(false);
+  });
 });

@@ -44,10 +44,18 @@ export const identityImportCmd = new Command("import")
 
       const existing = projectKeystore[decoded.idName] || { publicKey: "", privateKey: "" };
 
-      projectKeystore[decoded.idName] = {
+      const merged = {
         publicKey: decoded.publicKey || existing.publicKey,
         privateKey: decoded.privateKey || existing.privateKey,
       };
+
+      if (!merged.publicKey && !merged.privateKey) {
+        throw new Error(
+          `Cannot import identity '${decoded.idName}': no public or private key in bundle or existing keystore.`
+        );
+      }
+
+      projectKeystore[decoded.idName] = merged;
 
       await store.writeProjectKeystore(projectKeystore, keystorePath);
       console.log(`Successfully imported keys for identity '${decoded.idName}'.`);

@@ -30,6 +30,18 @@ describe("CLI operations", () => {
       .quiet();
   }
 
+  async function runCLIWithKeystore(user: string, keystorePath: string, ...args: string[]) {
+    return await $`bun run ./src/index.ts ${[...args, "--keystore", keystorePath]}`
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir,
+        SENV_PROJECT_DIR: tempProjectDir,
+        USER: user,
+      })
+      .nothrow()
+      .quiet();
+  }
+
   it("initializes a new project successfully", async () => {
     const { exitCode, stdout } = await runCLI("init");
     expect(exitCode).toBe(0);
@@ -255,19 +267,6 @@ describe("CLI operations", () => {
     expect(out).toContain("1.0.0");
   });
 
-  async function runCLIWithKeystore(user: string, keystorePath: string, ...args: string[]) {
-    const allArgs = [...args, "--keystore", keystorePath];
-    return await $`bun run ./src/index.ts ${allArgs}`
-      .env({
-        ...process.env,
-        SENV_CONFIG_DIR: tempConfigDir,
-        SENV_PROJECT_DIR: tempProjectDir,
-        USER: user,
-      })
-      .nothrow()
-      .quiet();
-  }
-
   it("handles merge between two files", async () => {
     await runCLI("init");
     await runCLI("key", "add", "testuser-local", "KEY_A", "VAL_A");
@@ -445,7 +444,7 @@ describe("CLI operations", () => {
 
     const crossBA = await runCLIWithKeystore("user-B", keystoreB, "key", "get", "USER_A_SECRET");
     expect(crossBA.exitCode).toBe(1);
-  });
+  }, 30000);
 
   it("supports the --keystore flag to override default location", async () => {
     const customKeystore = path.join(os.tmpdir(), `custom-keys-${Date.now()}.json`);
@@ -515,5 +514,173 @@ describe("CLI operations", () => {
 
     expect(evalRes.exitCode).toBe(0);
     expect(evalRes.stdout.toString()).toBe(multiline);
+  });
+
+  it("identity rm -y removes identity from both keystore and config", async () => {
+    await runCLI("init");
+    await runCLI("identity", "add", "victim");
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const keystorePath = path.join(tempConfigDir, "identity.json");
+
+    const configBefore = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(configBefore.identities["victim"]).toBeDefined();
+    const ksBefore = JSON.parse(await fs.readFile(keystorePath, "utf-8"));
+    const projectKey = Object.keys(ksBefore.projects)[0]!;
+    expect(ksBefore.projects[projectKey]["victim"]).toBeDefined();
+
+    const rmRes = await runCLI("identity", "rm", "victim", "-y");
+    expect(rmRes.exitCode).toBe(0);
+
+    const configAfter = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(configAfter.identities["victim"]).toBeUndefined();
+    const ksAfter = JSON.parse(await fs.readFile(keystorePath, "utf-8"));
+    expect(ksAfter.projects[projectKey]["victim"]).toBeUndefined();
+  });
+
+  it("identity rm without -y aborts on non-TTY stdin", async () => {
+    await runCLI("init");
+    await runCLI("identity", "add", "victim");
+
+    const res = await $`bun run ./src/index.ts identity rm victim`
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir,
+        SENV_PROJECT_DIR: tempProjectDir,
+        USER: "testuser",
+      })
+      .nothrow();
+
+    expect(res.exitCode).toBe(0);
+    const combined = res.stdout.toString() + res.stderr.toString();
+    expect(combined).toContain("Aborted");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const config = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(config.identities["victim"]).toBeDefined();
+  });
+
+  it("identity rm of non-existent identity exits 1", async () => {
+    await runCLI("init");
+    const res = await runCLI("identity", "rm", "ghost", "-y");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("not found");
+  });
+
+  it("init re-init reports missing keys when keystore is incomplete", async () => {
+    await runCLI("init");
+    await runCLI("identity", "add", "external");
+
+    const fresh = await fs.mkdtemp(path.join(os.tmpdir(), "senv-test-freshks-"));
+    try {
+      const reinit = await $`bun run ./src/index.ts init --keystore ${path.join(fresh, "identity.json")}`
+        .env({ ...process.env, SENV_PROJECT_DIR: tempProjectDir, USER: "testuser" })
+        .nothrow().quiet();
+      expect(reinit.exitCode).toBe(0);
+      const combined = reinit.stdout.toString() + reinit.stderr.toString();
+      expect(combined).toContain("missing from your local keystore");
+      expect(combined).toContain("external");
+    } finally {
+      await fs.rm(fresh, { recursive: true, force: true });
+    }
+  });
+
+  it("key get --identity disambiguates between conflicting identities", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "AMBIG", "from-local");
+    await runCLI("identity", "add", "alt");
+    await runCLI("key", "add", "alt", "AMBIG", "from-alt");
+
+    const defaultRes = await runCLI("key", "get", "AMBIG");
+    expect(defaultRes.exitCode).toBe(0);
+    expect(defaultRes.stdout.toString().trim()).toBe("from-local");
+    expect(defaultRes.stderr.toString()).toContain("alt");
+
+    const pickedRes = await runCLI("key", "get", "AMBIG", "-i", "alt");
+    expect(pickedRes.exitCode).toBe(0);
+    expect(pickedRes.stdout.toString().trim()).toBe("from-alt");
+    expect(pickedRes.stderr.toString()).not.toContain("Conflict");
+
+    const badRes = await runCLI("key", "get", "AMBIG", "-i", "ghost");
+    expect(badRes.exitCode).toBe(1);
+    expect(badRes.stderr.toString()).toContain("ghost");
+  });
+
+  it("key list --identity restricts output and skips conflict warning", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "SHARED", "alpha");
+    await runCLI("key", "add", "testuser-local", "ONLY_LOCAL", "lo");
+    await runCLI("identity", "add", "alt");
+    await runCLI("key", "add", "alt", "SHARED", "beta");
+
+    const fullRes = await runCLI("key", "list");
+    expect(fullRes.stderr.toString()).toContain("Conflict");
+
+    const restrictedRes = await runCLI("key", "list", "-i", "alt");
+    expect(restrictedRes.exitCode).toBe(0);
+    expect(restrictedRes.stderr.toString()).not.toContain("Conflict");
+    expect(restrictedRes.stdout.toString()).toContain("SHARED");
+    expect(restrictedRes.stdout.toString()).not.toContain("ONLY_LOCAL");
+  });
+
+  it("importing bundle with no publicKey and no existing publicKey errors", async () => {
+    await runCLI("init");
+    const bundle = Buffer.from(
+      JSON.stringify({ idName: "blank", publicKey: "", privateKey: "" }),
+      "utf8"
+    ).toString("base64");
+
+    const res = await runCLI("identity", "import", bundle, "-y");
+    expect(res.exitCode).toBe(1);
+    const stderr = res.stderr.toString();
+    expect(stderr.includes("Invalid keypair string") || stderr.includes("no public or private key")).toBe(true);
+  });
+
+  it("key add -> rm -> add round-trips correctly", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "CYCLE", "v1");
+    const rmRes = await runCLI("key", "rm", "testuser-local", "CYCLE");
+    expect(rmRes.exitCode).toBe(0);
+    const after = await runCLI("key", "get", "CYCLE");
+    expect(after.exitCode).toBe(1);
+    const re = await runCLI("key", "add", "testuser-local", "CYCLE", "v2");
+    expect(re.exitCode).toBe(0);
+    const get = await runCLI("key", "get", "CYCLE");
+    expect(get.stdout.toString().trim()).toBe("v2");
+  });
+
+  it("use with no keys for env produces empty stdout and exit 0", async () => {
+    await runCLI("init");
+    const res = await runCLI("use", "-e", "ghost-env");
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout.toString()).toBe("");
+  });
+
+  it("use handles purely numeric value", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "NUM", "12345");
+    const res = await runCLI("use");
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout.toString()).toContain("export NUM=$'12345'");
+
+    const evalRes = await $`bash -c ${`eval $(bun run ./src/index.ts use); printf %s "$NUM"`}`
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir,
+        SENV_PROJECT_DIR: tempProjectDir,
+        USER: "testuser",
+      })
+      .nothrow()
+      .quiet();
+    expect(evalRes.exitCode).toBe(0);
+    expect(evalRes.stdout.toString()).toBe("12345");
+  });
+
+  it("key add with --env nonexistent then get with that env works", async () => {
+    await runCLI("init");
+    const add = await runCLI("key", "add", "testuser-local", "EXOTIC", "v", "-e", "staging-eu");
+    expect(add.exitCode).toBe(0);
+    const get = await runCLI("key", "get", "EXOTIC", "-e", "staging-eu");
+    expect(get.exitCode).toBe(0);
+    expect(get.stdout.toString().trim()).toBe("v");
   });
 });

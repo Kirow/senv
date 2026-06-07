@@ -1,18 +1,26 @@
 import { Command } from "commander";
 import * as senvCrypto from "../core/crypto";
 import * as store from "../core/store";
-import { type SenvProjectConfig, type SenvPayload } from "../core/store";
-import * as fs from "node:fs";
-import { getAccessiblePayloads } from "./utils";
+import { type SenvProjectConfig, type SenvPayload, CURRENT_PROJECT_CONFIG_VERSION } from "../core/store";
+import * as fs from "node:fs/promises";
+import { getCommandOptions } from "./utils";
 
 export const initCmd = new Command("init")
   .description("Initializes a new .senv.json and creates a local keypair if missing")
   .action(async (options, command) => {
-    const keystorePath = command.optsWithGlobals().keystore;
+    const { keystorePath } = getCommandOptions(command);
     const projectKeystore = await store.getProjectKeystore(keystorePath);
     const configPath = store.getProjectConfigPath();
 
-    if (fs.existsSync(configPath)) {
+    let configExists = false;
+    try {
+      await fs.access(configPath);
+      configExists = true;
+    } catch {
+      configExists = false;
+    }
+
+    if (configExists) {
       console.log(".senv.json already exists.");
       try {
         const config = await store.readProjectConfig();
@@ -23,6 +31,7 @@ export const initCmd = new Command("init")
           console.warn("\n[WARNING] The following identities are in .senv.json but are missing from your local keystore:");
           missingKeys.forEach(id => console.warn(`- ${id}`));
           console.warn("You will not be able to decrypt payloads or add new keys to these identities.");
+          console.warn("Duplicate-key report will only cover identities you can decrypt.\n");
         } else {
           console.log("All identities have matching keys in your local keystore.");
         }
@@ -51,7 +60,7 @@ export const initCmd = new Command("init")
 
     console.log("Creating .senv.json...");
     const config: SenvProjectConfig = {
-      version: "1.0",
+      version: CURRENT_PROJECT_CONFIG_VERSION,
       identities: {},
     };
 
@@ -70,40 +79,46 @@ async function reportDuplicateKeys(
   projectKeystore: store.KeystoreProjectStore
 ): Promise<void> {
   const config = await store.readProjectConfig();
-  const envs = new Set<string>();
+
+  const grouped = new Map<string, Map<string, { value: string; identities: Set<string> }>>();
 
   for (const [idName, encrypted] of Object.entries(config.identities)) {
     const priv = projectKeystore[idName]?.privateKey;
     if (!priv) continue;
+    let decrypted: SenvPayload;
     try {
-      const decrypted = senvCrypto.decryptPayload(encrypted, priv);
-      for (const item of decrypted) envs.add(item.environment);
-    } catch {
-      // skip undecryptable
+      decrypted = senvCrypto.decryptPayload(encrypted, priv);
+    } catch (e: any) {
+      console.warn(`[WARN] Failed to decrypt identity '${idName}': ${e.message}`);
+      continue;
+    }
+    for (const item of decrypted) {
+      if (!grouped.has(item.environment)) grouped.set(item.environment, new Map());
+      const envMap = grouped.get(item.environment)!;
+      const existing = envMap.get(item.key);
+      if (existing) {
+        existing.identities.add(idName);
+      } else {
+        envMap.set(item.key, { value: item.value, identities: new Set([idName]) });
+      }
     }
   }
 
-  const aggregated: { identityName: string; payload: SenvPayload }[] = [];
-  for (const env of envs) {
-    const payloads = await getAccessiblePayloads(env);
-    aggregated.push(...payloads);
-  }
+  if (grouped.size === 0) return;
 
-  const seen = new Map<string, string[]>();
-  for (const { identityName, payload } of aggregated) {
-    for (const item of payload) {
-      const k = `${item.environment}:${item.key}`;
-      const list = seen.get(k) || [];
-      if (!list.includes(identityName)) list.push(identityName);
-      seen.set(k, list);
+  const duplicates: { env: string; key: string; identities: string[] }[] = [];
+  for (const [env, envMap] of grouped.entries()) {
+    for (const [k, { identities }] of envMap.entries()) {
+      if (identities.size > 1) {
+        duplicates.push({ env, key: k, identities: Array.from(identities) });
+      }
     }
   }
 
-  const duplicates = Array.from(seen.entries()).filter(([, ids]) => ids.length > 1);
   if (duplicates.length === 0) return;
 
   console.warn("\n[WARNING] Duplicate keys detected across identities:");
-  for (const [key, ids] of duplicates) {
-    console.warn(`- ${key} defined in: ${ids.join(", ")}`);
+  for (const d of duplicates) {
+    console.warn(`- ${d.env}:${d.key} defined in: ${d.identities.join(", ")}`);
   }
 }

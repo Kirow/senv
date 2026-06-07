@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { initCmd } from "./commands/init";
 import { useCmd } from "./commands/use";
 import { mergeCmd } from "./commands/merge";
+import { VERSION } from "./version";
 
 import { identityListCmd } from "./commands/identity/list";
 import { identityAddCmd } from "./commands/identity/add";
@@ -21,7 +22,7 @@ const program = new Command();
 program
   .name("senv")
   .description("Secure environment variables manager using hybrid RSA/AES-GCM encryption")
-  .version("Secure ENV (senv), 1.0.0");
+  .version(`Secure ENV (senv), ${VERSION}`);
 
 program.option("-e, --env <env>", "Target environment", "dev");
 program.option("-k, --keystore <path>", "Custom path to identity.json keystore");

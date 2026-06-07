@@ -16,6 +16,10 @@ export const identityRmCmd = new Command("rm")
       }
 
       if (!options.yes) {
+        if (!process.stdin.isTTY) {
+          process.stderr.write("Aborted.\n");
+          return;
+        }
         const rl = readline.createInterface({
           input: process.stdin,
           output: process.stdout,
@@ -30,13 +34,13 @@ export const identityRmCmd = new Command("rm")
 
       delete config.identities[idName];
       await store.writeProjectConfig(config);
-      
+
       const projectKeystore = await store.getProjectKeystore(keystorePath);
       if (projectKeystore[idName]) {
         delete projectKeystore[idName];
         await store.writeProjectKeystore(projectKeystore, keystorePath);
       }
-      
+
       console.log(`Successfully removed identity '${idName}'.`);
     } catch (e: any) {
       console.error(e.message);

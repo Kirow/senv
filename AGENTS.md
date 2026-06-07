@@ -33,21 +33,24 @@ A terminal-based, decentralized encrypted environment-variable manager. Each use
 ```
 src/
   index.ts                 # Commander program, top-level --env / --keystore flags
+  version.ts               # VERSION constant; single source of truth for -V output
   core/
     crypto.ts              # RSA keygen, encryptPayload, decryptPayload, isValidPEM, base64 keypair codec
-    store.ts               # Keystore + .senv.json I/O, atomic writes, version migration stub
+    store.ts               # Keystore + .senv.json I/O, atomicWriteFile (with fsync), version validation
+    conflict.ts            # Git conflict marker detection + multi-block parser
   commands/
     utils.ts               # isValidIdentityName, isValidEnvName, getCommandOptions, getAccessiblePayloads
-    init.ts                # First-run setup, duplicate-key warning
+    init.ts                # First-run setup, duplicate-key warning, missing-key warning
     use.ts                 # `eval $(senv use)` — buffered output
-    merge.ts               # Git merge conflict resolution
+    merge.ts               # Git merge conflict resolution (uses atomicWriteFile)
     identity/
       add.ts, list.ts, rm.ts, export.ts, import.ts
     key/
       add.ts, get.ts, list.ts, rm.ts
 test/
   crypto.test.ts           # Crypto primitives + base64 codec
-  store.test.ts            # Keystore I/O, atomic writes, mode 0600, version mismatch
+  store.test.ts            # Keystore I/O, atomic writes, mode 0600, version validation
+  conflict.test.ts         # Conflict marker parsing, single + multi-block, owner matching
   cli.test.ts              # End-to-end via `bun $` spawning `bun run ./src/index.ts`
 Makefile                   # build / test / install (installs to ~/.local/bin/senv)
 README.md                  # User-facing docs
@@ -57,13 +60,15 @@ README.md                  # User-facing docs
 
 - **Imports:** Always use `import * as senvCrypto from "../core/crypto"` (NOT `crypto`) in command files. The local module shadows Node's `crypto`; the `senvCrypto` rename is deliberate. Only `core/crypto.ts` and `core/store.ts` may import `node:crypto`.
 - **Error handling:** Commands wrap their work in `try/catch` and call `console.error(e.message); process.exit(1)`. Don't `throw` uncaught from an action — commander will print a stack trace.
-- **CLI options:** Use `getCommandOptions(command)` from `commands/utils.ts` to read the global `-e/--env` and `-k/--keystore` flags. Don't re-implement the parent/global opts fallback.
+- **CLI options:** Use `getCommandOptions(command)` from `commands/utils.ts` to read the global `-e/--env` and `-k/--keystore` flags. Don't re-implement the parent/global opts fallback. Don't read `command.optsWithGlobals()` directly in command actions.
 - **Identity names:** Must match `/^[A-Za-z0-9._-]+$/`. Enforce via `isValidIdentityName`.
 - **Env var names:** Must match `/^[A-Za-z_][A-Za-z0-9_]*$/`. Enforce via `isValidEnvName` at write-time, not just at export-time.
 - **PEM validation:** Use `isValidPEM(key, "public" | "private")` from `core/crypto.ts` rather than string-matching the `BEGIN ... KEY` header. The latter is forgeable.
-- **Atomic writes:** All file writes go through `atomicWriteFile(filePath, data, mode)` (defined in `core/store.ts`). Direct `fs.writeFile` outside that helper is a bug.
+- **Atomic writes:** All file writes go through `atomicWriteFile(filePath, data, mode)` (exported from `core/store.ts`). It does tmp-file + fsync + rename. Direct `fs.writeFile` outside that helper is a bug.
 - **File permissions:** Keystore and `.senv.json` must be created with `mode: 0o600`. The config dir with `0o700`. Tests assert this.
-- **Versioning:** `CURRENT_KEYSTORE_VERSION` and `CURRENT_PROJECT_CONFIG_VERSION` are in `core/store.ts`. Bumping requires adding a case in `migrateKeystore`.
+- **Versioning:** `CURRENT_KEYSTORE_VERSION` and `CURRENT_PROJECT_CONFIG_VERSION` are in `core/store.ts`. Bumping requires adding a case in `validateKeystoreVersion` and reading from the constant (not hardcoding `"1.0"`).
+- **Version string:** `VERSION` lives in `src/version.ts`. `index.ts` uses it for `program.version(...)`. The Makefile's install collision check is version-agnostic (greps for the CLI name `Secure ENV (senv)`).
+- **Conflict resolution:** `core/conflict.ts` exports `parseGitConflictSenv` (handles multiple blocks via `matchAll`) and `pickConflictBlobWithoutPrivateKey` (owner-matching fallback).
 - **Buffer `use` output:** `use.ts` builds the full output as a string array and writes once at the end, so `eval $(senv use)` doesn't partially evaluate on error.
 - **No emojis, no comments unless asked.** The existing code has zero comments; match that.
 - **Bun-specific:** Use `bun:test` imports, `bun $` for shellouts in tests, `process.stderr` for warnings, `process.stdout` only for actual command output. `console.log` in import is acceptable since it goes to stdout.
@@ -71,7 +76,7 @@ README.md                  # User-facing docs
 ## Common commands
 
 ```bash
-# Run all tests (crypto, store, CLI integration)
+# Run all tests (crypto, store, conflict, CLI integration)
 bun test
 
 # Build standalone binary to ./senv
@@ -94,11 +99,12 @@ These are read in `core/store.ts` (`getKeystorePath`, `getProjectDir`, `getProje
 
 ## Testing
 
-- Tests in `test/cli.test.ts` spawn a fresh bun process per call via the `runCLI(...args)` helper, which sets `SENV_CONFIG_DIR` / `SENV_PROJECT_DIR` to `mkdtemp` paths and `USER: "testuser"`. Use this helper for all CLI tests; do not call `bun run` inline.
+- Tests in `test/cli.test.ts` spawn a fresh bun process per call via the `runCLI(...args)` helper, which sets `SENV_CONFIG_DIR` / `SENV_PROJECT_DIR` to `mkdtemp` paths and `USER: "testuser"`. For tests that need a non-default `USER` (e.g., the two-user merge test) or a custom keystore, use `runCLIWithKeystore(user, keystorePath, ...args)`.
 - Always pair `mkdtemp` with `rm(..., { recursive: true, force: true })` in `afterEach` (and `finally` blocks for ad-hoc temp dirs).
 - For tests that need to spawn a bun process with custom env (e.g. tests that intentionally don't use the helper), drop `.quiet()` so stdout/stderr are visible to the test.
 - `it.todo(...)` is used for known-broken behaviors that will be fixed later (e.g. multiline shell-escape).
-- Gotcha: `readline.createInterface({ input: process.stdin, output: process.stdout }).question(...)` **hangs silently** when stdin is not a TTY (no error, no return). Always check `process.stdin.isTTY` first and short-circuit (e.g. print "Aborted." and `return`) when running in a non-interactive context. This bit us during the import-overwrite test.
+- For long-running tests (the two-user merge test spawns many subprocesses), pass a timeout as the 3rd arg: `it("name", async () => { ... }, 30000)`.
+- Gotcha: `readline.createInterface({ input: process.stdin, output: process.stdout }).question(...)` **hangs silently** when stdin is not a TTY (no error, no return). Always check `process.stdin.isTTY` first and short-circuit (e.g. print "Aborted." and `return`) when running in a non-interactive context. This applies to `identity rm` and `identity import` overwrite prompts.
 
 ## Adding a new command
 
@@ -111,10 +117,13 @@ These are read in `core/store.ts` (`getKeystorePath`, `getProjectDir`, `getProje
 
 ## Don't
 
-- Don't import `node:crypto` from anywhere except `src/core/crypto.ts` and `src/core/store.ts` (the latter only for the `crypto` module's `mkdir`/`writeFile`/`readFile`/`rename`).
+- Don't import `node:crypto` from anywhere except `src/core/crypto.ts` and `src/core/store.ts` (the latter only for the `mkdir`/`writeFile`/`readFile`/`rename`/`open`).
 - Don't add comments to source code. The repo has none.
 - Don't use `import crypto` — it shadows Node's crypto and was renamed to `senvCrypto` project-wide.
 - Don't `process.exit(0)` from inside a try block — let the action return naturally.
-- Don't write to `.senv.json` or the keystore without going through `atomicWriteFile` (or its inline equivalent in `merge.ts`).
+- Don't write to `.senv.json` or the keystore without going through `atomicWriteFile`.
+- Don't read `command.optsWithGlobals()` directly in command actions — use `getCommandOptions`.
+- Don't hardcode version strings — read from `src/version.ts` and the `CURRENT_*_VERSION` constants in `core/store.ts`.
 - Don't change crypto defaults (RSA-2048, AES-256-GCM, OAEP/SHA-256) without a security review.
 - Don't add `npm`/`pnpm`/`yarn` artifacts; this is a bun-only project.
+- Don't commit the `/senv` binary; `.gitignore` excludes it.

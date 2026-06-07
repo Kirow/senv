@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -36,29 +36,45 @@ export type SenvPayload = SenvPayloadItem[];
 export const CURRENT_KEYSTORE_VERSION = "1.0";
 export const CURRENT_PROJECT_CONFIG_VERSION = "1.0";
 
-export function migrateKeystore(parsed: any): Keystore {
-  if (parsed && typeof parsed === "object" && typeof parsed.version === "string") {
-    if (parsed.version === CURRENT_KEYSTORE_VERSION) {
-      return parsed as Keystore;
-    }
+export function validateKeystoreVersion(parsed: any): Keystore {
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    typeof parsed.version !== "string" ||
+    parsed.version !== CURRENT_KEYSTORE_VERSION
+  ) {
+    const got = parsed && typeof parsed === "object" && typeof parsed.version === "string"
+      ? parsed.version
+      : "<missing>";
+    throw new Error(`Unsupported keystore version. Expected '${CURRENT_KEYSTORE_VERSION}'. Got '${got}'.`);
   }
-  throw new Error(`Unsupported keystore version. Expected '${CURRENT_KEYSTORE_VERSION}'.`);
+  return parsed as Keystore;
 }
 
-async function atomicWriteFile(filePath: string, data: string, mode: number): Promise<void> {
+export async function atomicWriteFile(filePath: string, data: string, mode: number): Promise<void> {
   const tmpPath = filePath + ".tmp";
-  await writeFile(tmpPath, data, { encoding: "utf-8", mode });
+  const fh = await open(tmpPath, "w", mode);
+  try {
+    await fh.writeFile(data, "utf-8");
+    await fh.sync();
+  } finally {
+    await fh.close();
+  }
   await rename(tmpPath, filePath);
+}
+
+async function mkdirSecure(dir: string): Promise<void> {
+  await mkdir(dir, { recursive: true, mode: 0o700 });
 }
 
 export async function getKeystorePath(customPath?: string): Promise<string> {
   if (customPath) {
     const dir = path.dirname(customPath);
-    await mkdir(dir, { recursive: true, mode: 0o700 });
+    await mkdirSecure(dir);
     return customPath;
   }
   const configDir = process.env.SENV_CONFIG_DIR || path.join(os.homedir(), ".config", "senv");
-  await mkdir(configDir, { recursive: true, mode: 0o700 });
+  await mkdirSecure(configDir);
   return path.join(configDir, "identity.json");
 }
 
@@ -70,8 +86,13 @@ export async function readKeystore(customPath?: string): Promise<Keystore> {
   try {
     const p = await getKeystorePath(customPath);
     const content = await readFile(p, "utf-8");
-    const parsed = JSON.parse(content);
-    return migrateKeystore(parsed);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(content);
+    } catch (parseErr: any) {
+      throw new Error(`Failed to parse keystore JSON: ${parseErr.message}`);
+    }
+    return validateKeystoreVersion(parsed);
   } catch (err: any) {
     if (err.code === "ENOENT") {
       return { version: CURRENT_KEYSTORE_VERSION, projects: {} };

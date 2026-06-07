@@ -5,6 +5,7 @@ node_modules
 out
 dist
 *.tgz
+/senv
 
 # code coverage
 coverage
@@ -35,3 +36,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # local two-user merge experiment sandbox
 experiment/
+
+# stray test artifacts
+.test-git-*/

@@ -73,9 +73,7 @@ export function mergeProjectConfigs(
 }
 
 async function writeMergedConfig(filePath: string, config: SenvProjectConfig): Promise<void> {
-  const tmpPath = filePath + ".tmp";
-  await fs.writeFile(tmpPath, JSON.stringify(config, null, 2), { encoding: "utf-8", mode: 0o600 });
-  await fs.rename(tmpPath, filePath);
+  await store.atomicWriteFile(filePath, JSON.stringify(config, null, 2), 0o600);
 }
 
 export const mergeCmd = new Command("merge")

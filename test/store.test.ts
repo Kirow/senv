@@ -72,4 +72,36 @@ describe("store operations", () => {
     const readConfig = await store.readProjectConfig();
     expect(readConfig).toEqual(config);
   });
+
+  it("readKeystore with invalid JSON throws a clear error", async () => {
+    const badPath = path.join(tempConfigDir, "identity.json");
+    await fs.writeFile(badPath, "{ this is not valid JSON", "utf-8");
+    await expect(store.readKeystore()).rejects.toThrow(/Failed to parse keystore JSON/);
+  });
+
+  it("writeKeystore with custom path creates parent dir with 0700", async () => {
+    const nested = path.join(tempConfigDir, "nested", "deep", "keys.json");
+    const data: store.Keystore = { version: "1.0", projects: {} };
+    await store.writeKeystore(data, nested);
+    expect(await fs.exists(nested)).toBe(true);
+    const dirStat = await fs.stat(path.dirname(nested));
+    expect(dirStat.mode & 0o777).toBe(0o700);
+  });
+
+  it("readKeystore with custom path works", async () => {
+    const custom = path.join(tempConfigDir, "custom.json");
+    const data: store.Keystore = {
+      version: "1.0",
+      projects: { "/proj": { "id1": { publicKey: "P", privateKey: "X" } } },
+    };
+    await store.writeKeystore(data, custom);
+    const read = await store.readKeystore(custom);
+    expect(read).toEqual(data);
+  });
+
+  it("validateKeystoreVersion rejects missing version field", () => {
+    expect(() => store.validateKeystoreVersion({ projects: {} })).toThrow(
+      /Unsupported keystore version/
+    );
+  });
 });

@@ -37,7 +37,7 @@ make install
 ## Usage
 
 ### 1. Initialize the Project
-Run this in the root of your project. It will generate a local RSA keypair (if one doesn't exist) and create `.senv.json`.
+Run this in the root of your project. It will generate a local RSA keypair (if one doesn't exist) and create `.senv.json`. The default identity name is derived from `$USER` (with non-alphanumeric characters sanitized to `-`).
 ```bash
 senv init
 ```
@@ -46,15 +46,17 @@ senv init
 Add, remove, and list variables. By default, `senv` targets the `dev` environment. You can specify a different environment using the `-e` or `--env` flag.
 ```bash
 # Add a variable
-senv add my-identity API_KEY "super_secret_value"
+senv key add my-identity API_KEY "super_secret_value"
 
 # List masked variables
-senv list
-senv list -e prod
+senv key list
+senv key list -e prod
 
 # Get a plaintext value
-senv get API_KEY
+senv key get API_KEY
 ```
+
+> When the same key exists in multiple identities, `key get` / `key list` return the first-encountered identity's value. Use `-i <name>` (or `--identity <name>`) to disambiguate.
 
 ### 3. Apply the Variables
 You can easily source your decrypted environment variables into your active shell session:
