@@ -135,4 +135,14 @@ describe("crypto operations", () => {
     const forged = "-----BEGIN PUBLIC KEY-----\nNOT_A_REAL_KEY\n-----END PUBLIC KEY-----\n";
     expect(crypto.isValidPEM(forged, "public")).toBe(false);
   });
+
+  it("isValidPEM accepts a generated private key", () => {
+    const { privateKey } = crypto.generateRSAKeyPair();
+    expect(crypto.isValidPEM(privateKey, "private")).toBe(true);
+  });
+
+  it("isValidPEM rejects forgeable private key header", () => {
+    const forged = "-----BEGIN PRIVATE KEY-----\nNOT_A_REAL_KEY\n-----END PRIVATE KEY-----\n";
+    expect(crypto.isValidPEM(forged, "private")).toBe(false);
+  });
 });

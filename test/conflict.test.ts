@@ -110,4 +110,23 @@ describe("conflict parser", () => {
       pickConflictBlobWithoutPrivateKey("team-shared", "blob-ours", "blob-theirs", "user-A")
     ).toBe("blob-ours");
   });
+
+  it("rejects conflict markers that cannot be parsed", () => {
+    const malformed = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "alice-local": "blob-ours"
+  }
+}`;
+    expect(() => parseGitConflictSenv(malformed)).toThrow(
+      "Failed to parse git conflict markers."
+    );
+  });
+
+  it("pickConflictBlobWithoutPrivateKey returns ours when theirsLabel is missing", () => {
+    expect(
+      pickConflictBlobWithoutPrivateKey("user-A-local", "blob-ours", "blob-theirs")
+    ).toBe("blob-ours");
+  });
 });

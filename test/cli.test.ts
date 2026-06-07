@@ -2,7 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { $ } from "bun";
+import { $, spawn } from "bun";
 import { VERSION, GITHUB_URL } from "../src/version";
 import { runUpdate } from "../src/commands/update";
 
@@ -42,6 +42,27 @@ describe("CLI operations", () => {
       })
       .nothrow()
       .quiet();
+  }
+
+  async function runCLINoStdin(...args: string[]) {
+    const proc = spawn({
+      cmd: ["bun", "run", "./src/index.ts", ...args],
+      env: {
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir,
+        SENV_PROJECT_DIR: tempProjectDir,
+        USER: "testuser",
+      },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [exitCode, stdout, stderr] = await Promise.all([
+      proc.exited,
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+    ]);
+    return { exitCode, stdout, stderr };
   }
 
   it("initializes a new project successfully", async () => {
@@ -287,15 +308,7 @@ describe("CLI operations", () => {
     const exportRes = await runCLI("identity", "export", "testuser-local");
     const b64 = exportRes.stdout.toString().trim();
 
-    // No -y flag, stdin is closed -> readline returns empty, should abort
-    const res = await $`bun run ./src/index.ts identity import ${b64}`
-      .env({
-        ...process.env,
-        SENV_CONFIG_DIR: tempConfigDir,
-        SENV_PROJECT_DIR: tempProjectDir,
-        USER: "testuser",
-      })
-      .nothrow();
+    const res = await runCLINoStdin("identity", "import", b64);
 
     expect(res.exitCode).toBe(0);
     const combined = res.stdout.toString() + res.stderr.toString();
@@ -634,14 +647,7 @@ describe("CLI operations", () => {
     await runCLI("init");
     await runCLI("identity", "add", "victim");
 
-    const res = await $`bun run ./src/index.ts identity rm victim`
-      .env({
-        ...process.env,
-        SENV_CONFIG_DIR: tempConfigDir,
-        SENV_PROJECT_DIR: tempProjectDir,
-        USER: "testuser",
-      })
-      .nothrow();
+    const res = await runCLINoStdin("identity", "rm", "victim");
 
     expect(res.exitCode).toBe(0);
     const combined = res.stdout.toString() + res.stderr.toString();

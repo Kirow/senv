@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { compareSemver } from "../src/core/release";
+import { describe, expect, it, afterEach } from "bun:test";
+import { compareSemver, fetchLatestVersion } from "../src/core/release";
 
 describe("compareSemver", () => {
   it("returns 0 for equal versions", () => {
@@ -16,5 +16,32 @@ describe("compareSemver", () => {
 
   it("strips v prefix before comparing", () => {
     expect(compareSemver("v0.1.0", "0.1.0")).toBe(0);
+  });
+});
+
+describe("fetchLatestVersion", () => {
+  let origFetch: typeof globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = origFetch;
+  });
+
+  it("returns tag_name without v prefix", async () => {
+    origFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ tag_name: "v1.2.3" }), { status: 200 });
+    expect(await fetchLatestVersion()).toBe("1.2.3");
+  });
+
+  it("throws when GitHub API returns non-ok status", async () => {
+    origFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("", { status: 404 });
+    await expect(fetchLatestVersion()).rejects.toThrow("GitHub API returned 404");
+  });
+
+  it("throws when tag_name is missing", async () => {
+    origFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response(JSON.stringify({}), { status: 200 });
+    await expect(fetchLatestVersion()).rejects.toThrow("missing tag_name in release response");
   });
 });

@@ -104,4 +104,73 @@ describe("store operations", () => {
       /Unsupported keystore version/
     );
   });
+
+  it("getProjectKeystore returns identities for the current project", async () => {
+    const pks: store.KeystoreProjectStore = {
+      "test-id": { publicKey: "PUB", privateKey: "PRIV" },
+    };
+    await store.writeKeystore({
+      version: "1.0",
+      projects: { [tempProjectDir]: pks },
+    });
+    expect(await store.getProjectKeystore()).toEqual(pks);
+  });
+
+  it("getProjectKeystore returns empty object for unknown project", async () => {
+    await store.writeKeystore({ version: "1.0", projects: {} });
+    expect(await store.getProjectKeystore()).toEqual({});
+  });
+
+  it("writeProjectKeystore persists project-scoped identities", async () => {
+    const pks: store.KeystoreProjectStore = {
+      "my-id": { publicKey: "P", privateKey: "K" },
+    };
+    await store.writeProjectKeystore(pks);
+    expect(await store.getProjectKeystore()).toEqual(pks);
+    const ks = await store.readKeystore();
+    expect(ks.projects[tempProjectDir]).toEqual(pks);
+  });
+
+  it("getProjectKeystore uses cwd when SENV_PROJECT_DIR is unset", async () => {
+    delete process.env.SENV_PROJECT_DIR;
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(tempProjectDir);
+      const pks: store.KeystoreProjectStore = {
+        "cwd-id": { publicKey: "P", privateKey: "K" },
+      };
+      await store.writeProjectKeystore(pks);
+      expect(await store.getProjectKeystore()).toEqual(pks);
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
+  it("readProjectConfig uses cwd when SENV_PROJECT_DIR is unset", async () => {
+    delete process.env.SENV_PROJECT_DIR;
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(tempProjectDir);
+      const config: store.SenvProjectConfig = {
+        version: "1.0",
+        identities: { "id1": "encrypted" },
+      };
+      await store.writeProjectConfig(config);
+      expect(await store.readProjectConfig()).toEqual(config);
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
+  it("readKeystore wraps non-ENOENT read errors", async () => {
+    const keystorePath = path.join(tempConfigDir, "identity.json");
+    await fs.mkdir(keystorePath, { recursive: true });
+    await expect(store.readKeystore()).rejects.toThrow(/Failed to read keystore/);
+  });
+
+  it("readProjectConfig wraps non-ENOENT read errors", async () => {
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    await fs.mkdir(configPath, { recursive: true });
+    await expect(store.readProjectConfig()).rejects.toThrow(/Failed to read \.senv\.json/);
+  });
 });
