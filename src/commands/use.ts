@@ -5,8 +5,8 @@ function shellEscapeSingleQuoted(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
-export const exportCmd = new Command("export")
-  .description("Outputs export statements for standard shell usage: eval $(senv export)")
+export const useCmd = new Command("use")
+  .description("Outputs export statements for standard shell usage: eval $(senv use)")
   .action(async (options, command) => {
     const env = command.optsWithGlobals().env;
     const keystorePath = command.optsWithGlobals().keystore;

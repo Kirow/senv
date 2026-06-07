@@ -87,13 +87,13 @@ describe("CLI operations", () => {
   it("exports keypairs and imports them", async () => {
     await runCLI("init");
 
-    const exportRes = await runCLI("key", "export", "testuser-local");
+    const exportRes = await runCLI("identity", "export", "testuser-local");
     expect(exportRes.exitCode).toBe(0);
     const b64 = exportRes.stdout.toString().trim();
 
     const tempConfigDir2 = await fs.mkdtemp(path.join(os.tmpdir(), "senv-test-config2-"));
     try {
-      const importRes = await runCLI("key", "import", b64, "-y", "--keystore", path.join(tempConfigDir2, "identity.json"));
+      const importRes = await runCLI("identity", "import", b64, "-y", "--keystore", path.join(tempConfigDir2, "identity.json"));
       expect(importRes.exitCode).toBe(0);
       expect(importRes.stdout.toString()).toContain("Successfully imported keys");
     } finally {
@@ -105,13 +105,13 @@ describe("CLI operations", () => {
     await runCLI("init");
     await runCLI("key", "add", "testuser-local", "READ_ONLY_KEY", "read_secret");
 
-    const exportRes = await runCLI("key", "export", "testuser-local", "--decrypt-only");
+    const exportRes = await runCLI("identity", "export", "testuser-local", "--decrypt-only");
     expect(exportRes.exitCode).toBe(0);
     const b64 = exportRes.stdout.toString().trim();
 
     const tempConfigDir2 = await fs.mkdtemp(path.join(os.tmpdir(), "senv-test-config-ro-"));
     try {
-      const importRes = await runCLI("key", "import", b64, "-y", "--keystore", path.join(tempConfigDir2, "identity.json"));
+      const importRes = await runCLI("identity", "import", b64, "-y", "--keystore", path.join(tempConfigDir2, "identity.json"));
       expect(importRes.exitCode).toBe(0);
 
       const getRes = await runCLI("key", "get", "READ_ONLY_KEY", "--keystore", path.join(tempConfigDir2, "identity.json"));
@@ -126,13 +126,13 @@ describe("CLI operations", () => {
     await runCLI("init");
     await runCLI("key", "add", "testuser-local", "NEEDS_PUB", "v");
 
-    const exportRes = await runCLI("key", "export", "testuser-local", "--decrypt-only");
+    const exportRes = await runCLI("identity", "export", "testuser-local", "--decrypt-only");
     const b64 = exportRes.stdout.toString().trim();
 
     // Fresh keystore with no prior publicKey
     const fresh = await fs.mkdtemp(path.join(os.tmpdir(), "senv-test-fresh-"));
     try {
-      const importRes = await runCLI("key", "import", b64, "-y", "--keystore", path.join(fresh, "identity.json"));
+      const importRes = await runCLI("identity", "import", b64, "-y", "--keystore", path.join(fresh, "identity.json"));
       expect(importRes.exitCode).toBe(0);
 
       // Decrypt still works
@@ -152,7 +152,7 @@ describe("CLI operations", () => {
     await runCLI("init");
     await runCLI("key", "add", "testuser-local", "SAFE_KEY", "quo'te $(uname) `id` \"x\"");
 
-    const exportRes = await runCLI("export");
+    const exportRes = await runCLI("use");
     expect(exportRes.exitCode).toBe(0);
     expect(exportRes.stdout.toString()).toContain("export SAFE_KEY='quo'\\''te $(uname) `id` \"x\"'");
 
@@ -189,18 +189,18 @@ describe("CLI operations", () => {
       "utf8"
     ).toString("base64");
 
-    const res = await runCLI("key", "import", badBundle, "-y");
+    const res = await runCLI("identity", "import", badBundle, "-y");
     expect(res.exitCode).toBe(1);
     expect(res.stderr.toString()).toContain("not a valid PEM");
   });
 
   it("prompts before overwriting an existing identity on import", async () => {
     await runCLI("init");
-    const exportRes = await runCLI("key", "export", "testuser-local");
+    const exportRes = await runCLI("identity", "export", "testuser-local");
     const b64 = exportRes.stdout.toString().trim();
 
     // No -y flag, stdin is closed -> readline returns empty, should abort
-    const res = await $`bun run ./src/index.ts key import ${b64}`
+    const res = await $`bun run ./src/index.ts identity import ${b64}`
       .env({
         ...process.env,
         SENV_CONFIG_DIR: tempConfigDir,
@@ -255,7 +255,7 @@ describe("CLI operations", () => {
     expect(out).toContain("1.0.0");
   });
 
-  it("handles migration between two files", async () => {
+  it("handles merge between two files", async () => {
     await runCLI("init");
     await runCLI("key", "add", "testuser-local", "KEY_A", "VAL_A");
 
@@ -269,8 +269,8 @@ describe("CLI operations", () => {
     await runCLI("key", "add", "testuser-local", "KEY_B", "VAL_B");
 
     // Migrate fileB (has KEY_A) into fileA (has KEY_B)
-    const migrateRes = await runCLI("migrate", fileA, fileB);
-    expect(migrateRes.exitCode).toBe(0);
+    const mergeRes = await runCLI("merge", fileA, fileB);
+    expect(mergeRes.exitCode).toBe(0);
 
     // Now get KEY_A and KEY_B from file A
     const getB = await runCLI("key", "get", "KEY_B");
@@ -329,5 +329,5 @@ describe("CLI operations", () => {
     expect(initRes.stdout.toString()).toContain("Identity 'John-Doe-ops-acme-local' added.");
   });
 
-  it.todo("export safely handles multiline secret values");
+  it.todo("use safely handles multiline secret values");
 });

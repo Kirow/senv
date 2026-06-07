@@ -1,7 +1,7 @@
 .PHONY: build install test
 
 build:
-	bun run build
+	@bun run build
 
 test:
 	bun test
@@ -13,6 +13,6 @@ install: build
 			exit 1; \
 		fi; \
 	fi
-	mkdir -p "$(HOME)/.local/bin"
-	mv ./senv "$(HOME)/.local/bin/senv"
+	@mkdir -p "$(HOME)/.local/bin"
+	@mv ./senv "$(HOME)/.local/bin/senv"
 	@echo "senv has been successfully installed to $(HOME)/.local/bin/senv"

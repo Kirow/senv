@@ -12,7 +12,7 @@ Instead of maintaining `.env` files that cannot be safely committed, `senv` encr
 `.senv.json` stores one encrypted blob **per identity** (e.g., `alice-local`, `bob-local`). Each identity's blob is encrypted with that identity's RSA public key, so only holders of the corresponding private key can decrypt it. Your private keys are kept secure in your local keystore (`~/.config/senv/identity.json`, created with `0600` permissions) and are never committed.
 
 ## Sharing Access
-To allow another team member to access a given identity's secrets, share that identity's private key with them out-of-band (e.g., via a secure channel). They import the base64-encoded keypair into their local keystore with `senv key import`. There is no automatic key distribution or multi-recipient encryption; each identity is a single-recipient envelope.
+To allow another team member to access a given identity's secrets, share that identity's private key with them out-of-band (e.g., via a secure channel). They import the base64-encoded keypair into their local keystore with `senv identity import`. There is no automatic key distribution or multi-recipient encryption; each identity is a single-recipient envelope.
 
 > Note: there is currently no command to add a *teammate's public key* to an existing identity. If you want both Alice and Bob to share the same set of secrets under one name, treat it as a shared identity: have one person generate the keypair, distribute the private key (or its decrypt-only export) to the other, and both keep a copy locally.
 
@@ -59,10 +59,10 @@ senv get API_KEY
 ### 3. Apply the Variables
 You can easily source your decrypted environment variables into your active shell session:
 ```bash
-eval $(senv export)
+eval $(senv use)
 
 # Or for a specific environment
-eval $(senv export -e prod)
+eval $(senv use -e prod)
 ```
 
 ### 4. Share Access
@@ -70,21 +70,21 @@ To allow another team member to access a given identity, export that identity's 
 
 **Export your keys:**
 ```bash
-senv key export my-identity
+senv identity export my-identity
 
 # Export decrypt-only access (private key only)
-senv key export my-identity --decrypt-only
+senv identity export my-identity --decrypt-only
 ```
 
 **Import a keypair (yours or a teammate's):**
 ```bash
-senv key import "<BASE64_STRING>"
+senv identity import "<BASE64_STRING>"
 ```
 
 ### 5. Git Merge Conflicts
-If multiple people edit `.senv.json` simultaneously, use the migrate command to safely merge conflicting identity payloads:
+If multiple people edit `.senv.json` simultaneously, use the merge command to safely merge conflicting identity payloads:
 ```bash
-senv migrate .senv.json .senv.incoming.json
+senv merge .senv.json .senv.incoming.json
 ```
 
 ## Development and Testing

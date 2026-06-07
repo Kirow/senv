@@ -5,7 +5,7 @@ import { type SenvProjectConfig } from "../core/store";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
-export const migrateCmd = new Command("migrate")
+export const mergeCmd = new Command("merge")
   .argument("<FILE_A>", "Primary file")
   .argument("<FILE_B>", "File to merge from")
   .description("Utility to handle git merge conflicts by merging FILE_B identities into FILE_A")
@@ -45,9 +45,9 @@ export const migrateCmd = new Command("migrate")
       const tmpPath = fileA + ".tmp";
       await fs.writeFile(tmpPath, JSON.stringify(configA, null, 2), { encoding: "utf-8", mode: 0o600 });
       await fs.rename(tmpPath, fileA);
-      console.log(`Migration complete. Merged into ${fileA}.`);
+      console.log(`Merge complete. Merged into ${fileA}.`);
     } catch (e: any) {
-      console.error("Migration failed:", e.message);
+      console.error("Merge failed:", e.message);
       process.exit(1);
     }
   });

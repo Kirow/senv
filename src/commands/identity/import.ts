@@ -4,7 +4,7 @@ import * as store from "../../core/store";
 import { getCommandOptions } from "../utils";
 import * as readline from "node:readline/promises";
 
-export const keyImportCmd = new Command("import")
+export const identityImportCmd = new Command("import")
   .argument("<BASE64_STRING>", "Base64 encoded keypair")
   .option("-y, --yes", "Skip overwrite confirmation prompt")
   .description("Imports a Base64 encoded keypair into the local project keystore")

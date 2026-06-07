@@ -3,7 +3,7 @@ import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
 import { getCommandOptions, isValidIdentityName } from "../utils";
 
-export const keyExportCmd = new Command("export")
+export const identityExportCmd = new Command("export")
   .argument("<ID_NAME>", "Name of the identity")
   .option("--decrypt-only", "Export only the private key for decrypt-only access")
   .description("Exports an identity's keys as a Base64 string")
