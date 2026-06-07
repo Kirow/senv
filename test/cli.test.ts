@@ -96,6 +96,80 @@ describe("CLI operations", () => {
     expect(getRes.exitCode).toBe(1);
   });
 
+  it("migrate adds missing keys from a .env file", async () => {
+    await runCLI("init");
+
+    const envPath = path.join(tempProjectDir, ".env");
+    await fs.writeFile(envPath, "FOO=1\nBAR=2\n");
+
+    const migrateRes = await runCLI("migrate", "testuser-local", envPath);
+    expect(migrateRes.exitCode).toBe(0);
+    expect(migrateRes.stdout.toString()).toContain("- FOO");
+    expect(migrateRes.stdout.toString()).toContain("- BAR");
+
+    const getFoo = await runCLI("key", "get", "FOO");
+    expect(getFoo.stdout.toString().trim()).toBe("1");
+
+    const getBar = await runCLI("key", "get", "BAR");
+    expect(getBar.stdout.toString().trim()).toBe("2");
+  });
+
+  it("migrate skips existing keys", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "FOO", "existing");
+
+    const envPath = path.join(tempProjectDir, ".env");
+    await fs.writeFile(envPath, "FOO=new\nBAR=2\n");
+
+    const migrateRes = await runCLI("migrate", "testuser-local", envPath);
+    expect(migrateRes.exitCode).toBe(0);
+    expect(migrateRes.stdout.toString()).toContain("- BAR");
+    expect(migrateRes.stdout.toString()).not.toContain("Added:\n- FOO");
+    expect(migrateRes.stdout.toString()).toContain("- FOO");
+
+    const getFoo = await runCLI("key", "get", "FOO");
+    expect(getFoo.stdout.toString().trim()).toBe("existing");
+  });
+
+  it("migrate respects the -e flag", async () => {
+    await runCLI("init");
+
+    const envPath = path.join(tempProjectDir, ".env");
+    await fs.writeFile(envPath, "BAZ=1\n");
+
+    const migrateRes = await runCLI("migrate", "testuser-local", envPath, "-e", "prod");
+    expect(migrateRes.exitCode).toBe(0);
+
+    const getProd = await runCLI("key", "get", "BAZ", "-e", "prod");
+    expect(getProd.stdout.toString().trim()).toBe("1");
+
+    const getDev = await runCLI("key", "get", "BAZ");
+    expect(getDev.exitCode).toBe(1);
+  });
+
+  it("migrate skips invalid env var names with a warning", async () => {
+    await runCLI("init");
+
+    const envPath = path.join(tempProjectDir, ".env");
+    await fs.writeFile(envPath, "bad-name=1\nGOOD=2\n");
+
+    const migrateRes = await runCLI("migrate", "testuser-local", envPath);
+    expect(migrateRes.exitCode).toBe(0);
+    expect(migrateRes.stderr.toString()).toContain("Skipping invalid environment variable name 'bad-name'");
+    expect(migrateRes.stdout.toString()).toContain("- GOOD");
+    expect(migrateRes.stdout.toString()).not.toContain("- bad-name");
+
+    const getGood = await runCLI("key", "get", "GOOD");
+    expect(getGood.stdout.toString().trim()).toBe("2");
+  });
+
+  it("migrate fails when the .env file is missing", async () => {
+    await runCLI("init");
+
+    const migrateRes = await runCLI("migrate", "testuser-local", "missing.env");
+    expect(migrateRes.exitCode).toBe(1);
+  });
+
   it("exports keypairs and imports them", async () => {
     await runCLI("init");
 
@@ -259,12 +333,13 @@ describe("CLI operations", () => {
     expect(res.stderr.toString()).toContain("alt-2");
   });
 
-  it("output: -V prints version string with CLI name", async () => {
+  it("output: -V prints version string with CLI name and GitHub link", async () => {
     const res = await runCLI("-V");
     expect(res.exitCode).toBe(0);
     const out = res.stdout.toString().trim();
     expect(out).toContain("Secure ENV (senv)");
     expect(out).toContain("1.0.0");
+    expect(out).toContain("https://github.com/Kirow/senv/tree/main");
   });
 
   it("handles merge between two files", async () => {

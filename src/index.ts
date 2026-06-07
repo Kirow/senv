@@ -4,7 +4,8 @@ import { Command } from "commander";
 import { initCmd } from "./commands/init";
 import { useCmd } from "./commands/use";
 import { mergeCmd } from "./commands/merge";
-import { VERSION } from "./version";
+import { migrateCmd } from "./commands/migrate";
+import { VERSION, GITHUB_URL } from "./version";
 
 import { identityListCmd } from "./commands/identity/list";
 import { identityAddCmd } from "./commands/identity/add";
@@ -24,7 +25,7 @@ const program = new Command();
 program
   .name("senv")
   .description("Secure environment variables manager using hybrid RSA/AES-GCM encryption")
-  .version(`Secure ENV (senv), ${VERSION}`);
+  .version(`Secure ENV (senv), ${VERSION}\n${GITHUB_URL}`);
 
 program.option("-e, --env <env>", "Target environment", "dev");
 program.option("-k, --keystore <path>", "Custom path to identity.json keystore");
@@ -32,6 +33,7 @@ program.option("-k, --keystore <path>", "Custom path to identity.json keystore")
 program.addCommand(initCmd);
 program.addCommand(useCmd);
 program.addCommand(mergeCmd);
+program.addCommand(migrateCmd);
 
 const identityGroup = new Command("identity").description("Manage identities");
 identityGroup.addCommand(identityListCmd);
