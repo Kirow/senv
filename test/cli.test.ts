@@ -4,6 +4,7 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { $ } from "bun";
 import { VERSION, GITHUB_URL } from "../src/version";
+import { runUpdate } from "../src/commands/update";
 
 describe("CLI operations", () => {
   let tempConfigDir: string;
@@ -341,6 +342,22 @@ describe("CLI operations", () => {
     expect(out).toContain("Secure ENV (senv)");
     expect(out).toContain(VERSION);
     expect(out).toContain(GITHUB_URL);
+  });
+
+  it("update: reports up to date when latest matches VERSION", async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ tag_name: `v${VERSION}` }), { status: 200 });
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (msg: string) => logs.push(msg);
+    try {
+      await runUpdate();
+      expect(logs.join("\n")).toContain("already up to date");
+    } finally {
+      globalThis.fetch = origFetch;
+      console.log = origLog;
+    }
   });
 
   it("handles merge between two files", async () => {
