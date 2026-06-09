@@ -52,7 +52,7 @@ export function mergePresets(
 export function extractPresetsFromConflictedContent(content: string): Record<string, string[]> | undefined {
   const markerIdx = content.indexOf("<<<<<<<");
   const prefix = markerIdx >= 0 ? content.slice(0, markerIdx) : content;
-  const match = prefix.match(/"presets"\s*:\s*(\{[\s\S]*?\})\s*,/);
+  const match = prefix.match(/"presets"\s*:\s*(\{[\s\S]*?\})\s*,?/);
   if (!match) return undefined;
   try {
     return JSON.parse(match[1]!) as Record<string, string[]>;

@@ -92,7 +92,7 @@ describe("CLI operations", () => {
 
     const listRes = await runCLI("key", "list");
     expect(listRes.exitCode).toBe(0);
-    expect(listRes.stdout.toString()).toContain("API_KEY = s***3 (from: testuser-local)");
+    expect(listRes.stdout.toString()).toContain("API_KEY = s***3");
   });
 
   it("handles environment flags correctly", async () => {
@@ -1214,5 +1214,67 @@ describe("CLI operations", () => {
     const merged = JSON.parse(await fs.readFile(configPath, "utf-8"));
     expect(merged.presets.backend).toEqual(["API_KEY", "DB_URL"]);
     expect(merged.identities["testuser-local"]).toBeTruthy();
+  });
+
+  it("merge preserves presets when they are the last field (no trailing comma)", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "KEY_OURS", "val_ours");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const headConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const oursBlob = headConfig.identities["testuser-local"];
+
+    const conflicted = `{
+  "version": "1.0",
+  "presets": {
+    "backend": ["API_KEY", "DB_URL"]
+  },
+  "identities": {
+<<<<<<< HEAD
+    "testuser-local": "${oursBlob}"
+=======
+    "testuser-local": "${oursBlob}"
+>>>>>>> branch
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const mergeRes = await runCLI("merge");
+    expect(mergeRes.exitCode).toBe(0);
+
+    const merged = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(merged.presets.backend).toEqual(["API_KEY", "DB_URL"]);
+  });
+
+  it("preset list shows all defined presets", async () => {
+    await runCLI("init");
+    await runCLI("preset", "add", "backend", "API_KEY", "DB_URL");
+    await runCLI("preset", "add", "frontend", "PUBLIC_URL");
+
+    const res = await runCLI("preset", "list");
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout.toString()).toContain("backend: API_KEY, DB_URL");
+    expect(res.stdout.toString()).toContain("frontend: PUBLIC_URL");
+  });
+
+  it("preset list shows message when no presets defined", async () => {
+    await runCLI("init");
+    const res = await runCLI("preset", "list");
+    expect(res.exitCode).toBe(0);
+    expect(res.stdout.toString()).toContain("No presets defined");
+  });
+
+  it("preset check --strict exits 1 on missing keys", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "API_KEY", "secret");
+    await runCLI("preset", "add", "backend", "API_KEY", "MISSING_KEY");
+
+    const looseRes = await runCLI("preset", "check");
+    expect(looseRes.exitCode).toBe(0);
+    expect(looseRes.stderr.toString()).toContain("MISSING_KEY");
+
+    const strictRes = await runCLI("preset", "check", "--strict");
+    expect(strictRes.exitCode).toBe(1);
+    expect(strictRes.stderr.toString()).toContain("MISSING_KEY");
   });
 });

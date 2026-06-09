@@ -40,19 +40,19 @@ export async function getAccessibleKeyMap(
 export function warnMissingPresetKeys(
   presetName: string,
   keys: string[],
-  accessibleKeys: Set<string> | Map<string, unknown>,
+  accessibleKeys: Map<string, unknown>,
   env: string
-): void {
-  const hasKey = (key: string) =>
-    accessibleKeys instanceof Map ? accessibleKeys.has(key) : accessibleKeys.has(key);
-
+): number {
+  let missing = 0;
   for (const key of keys) {
-    if (!hasKey(key)) {
+    if (!accessibleKeys.has(key)) {
       console.warn(
         `[WARN] Preset '${presetName}': key '${key}' not available for environment '${env}'.`
       );
+      missing++;
     }
   }
+  return missing;
 }
 
 export function isValidEnvName(name: string): boolean {

@@ -124,15 +124,16 @@ Add, remove, and list variables. By default, `senv` targets the `dev` environmen
 # Add a variable
 senv key add my-identity API_KEY "super_secret_value"
 
-# List masked variables
+# List masked variables (by default: all environments, grouped by identity)
 senv key list
 senv key list -e prod
+senv key list -i my-identity
 
 # Get a plaintext value
 senv key get API_KEY
 ```
 
-> When the same key exists in multiple identities, `key get` / `key list` return the first-encountered identity's value. Use `-i <name>` (or `--identity <name>`) to disambiguate.
+> When the same key exists in multiple identities, `key get` / `key list` show a conflict warning on stderr and use the first-encountered identity's value. Pass `-i <name>` (or `--identity <name>`) to disambiguate. `key list` without `-e` shows all environments grouped by identity; with `-e` restricts to that environment.
 
 ### 3. Apply the Variables
 You can easily source your decrypted environment variables into your active shell session:
@@ -149,6 +150,9 @@ eval $(senv use backend)
 ### 4. Presets
 Named subsets of keys stored in plaintext inside `.senv.json`:
 ```bash
+# List all presets
+senv preset list
+
 # Define a preset (incremental; dedupes keys)
 senv preset add backend API_KEY DB_URL
 
@@ -158,9 +162,10 @@ senv preset rm backend
 
 # Verify all preset keys are decryptable for the current env
 senv preset check
+senv preset check --strict
 ```
 
-`preset check` and `senv use <preset>` print a `[WARN]` for each key in the preset that is missing or not decryptable for the target environment.
+`preset check` and `senv use <preset>` print a `[WARN]` for each key in the preset that is missing or not decryptable for the target environment. `preset check --strict` exits with code 1 if any keys are missing.
 
 ### 5. Share Access
 To allow another team member to access a given identity, export that identity's keys and have the recipient import them.

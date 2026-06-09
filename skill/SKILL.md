@@ -69,10 +69,13 @@ senv key add <identity> API_KEY "prod_value" -e prod
 ### Inspect secrets (prefer list over get)
 
 ```bash
-senv key list
-senv key list -e prod
-senv key list -i <identity>
+senv key list           # all environments, all identities
+senv key list -e prod   # prod env only, all identities
+senv key list -i <identity>  # all environments for a single identity
+senv key list -e prod -i <identity>  # filtered by both
 ```
+
+Output is grouped `Keys for environment 'ENV' [IDENTITY]:`. Conflict warnings emitted on stderr.
 
 ### Read a single value (only when needed)
 
@@ -104,12 +107,15 @@ senv preset add backend API_KEY DB_URL
 senv preset add backend REDIS_URL
 senv preset rm backend DB_URL
 senv preset rm backend
+senv preset list
 senv preset check
+senv preset check --strict
 ```
 
 - `preset add` is incremental (dedupes; does not remove existing keys)
 - `preset rm <name>` deletes the whole preset; `preset rm <name> KEY ...` removes specific keys
-- `preset check` warns for each missing key across all presets for the target env (exit 0)
+- `preset list` shows all defined presets and their keys
+- `preset check` warns for each missing key across all presets for the target env (exit 0). `--strict` exits 1 if any keys are missing.
 
 ### Import from a .env file
 
@@ -186,7 +192,7 @@ Import a base64 keypair into the local keystore. Prompts on overwrite unless `-y
 
 ### `senv key list [-i <identity>]`
 
-List keys for the target env with masked values.
+List keys grouped by environment and identity. Without `-e`, shows all environments. Conflict warnings on stderr.
 
 ### `senv key get <KEY> [-i <identity>]`
 
@@ -204,13 +210,17 @@ Remove a key from an identity for the target env.
 
 Add keys to a preset (incremental, deduped). Does not require keys to exist in the payload yet.
 
+### `senv preset list`
+
+List all defined presets and their keys.
+
 ### `senv preset rm <PRESET_NAME> [KEY...]`
 
 Remove an entire preset, or specific keys from it. Deletes the preset entry when the key list becomes empty.
 
 ### `senv preset check`
 
-Warn on stderr for each preset key that is missing or not decryptable for the target env. Exit 0.
+Warn on stderr for each preset key that is missing or not decryptable for the target env. With `--strict`, exits 1 if any keys are missing.
 
 ### `senv install skill`
 

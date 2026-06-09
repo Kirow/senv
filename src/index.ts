@@ -22,6 +22,7 @@ import { keyRmCmd } from "./commands/key/rm";
 import { installSkillCmd } from "./commands/install/skill";
 
 import { presetAddCmd } from "./commands/preset/add";
+import { presetListCmd } from "./commands/preset/list";
 import { presetRmCmd } from "./commands/preset/rm";
 import { presetCheckCmd } from "./commands/preset/check";
 
@@ -58,6 +59,7 @@ program.addCommand(keyGroup);
 
 const presetGroup = new Command("preset").description("Manage named key presets");
 presetGroup.addCommand(presetAddCmd);
+presetGroup.addCommand(presetListCmd);
 presetGroup.addCommand(presetRmCmd);
 presetGroup.addCommand(presetCheckCmd);
 program.addCommand(presetGroup);

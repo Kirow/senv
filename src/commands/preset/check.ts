@@ -4,7 +4,8 @@ import { getAccessibleKeyMap, getCommandOptions, warnMissingPresetKeys } from ".
 
 export const presetCheckCmd = new Command("check")
   .description("Verifies that preset keys are available for the current environment")
-  .action(async (_options, command) => {
+  .option("--strict", "Exit with code 1 if any preset keys are missing")
+  .action(async (options, command) => {
     const { env, keystorePath } = getCommandOptions(command);
     try {
       const config = await store.readProjectConfig();
@@ -16,9 +17,14 @@ export const presetCheckCmd = new Command("check")
       }
 
       const accessible = await getAccessibleKeyMap(env, keystorePath);
+      let totalMissing = 0;
 
       for (const [presetName, keys] of Object.entries(presets)) {
-        warnMissingPresetKeys(presetName, keys, accessible, env);
+        totalMissing += warnMissingPresetKeys(presetName, keys, accessible, env);
+      }
+
+      if (totalMissing > 0 && options.strict) {
+        process.exit(1);
       }
     } catch (e: any) {
       console.error(e.message);
