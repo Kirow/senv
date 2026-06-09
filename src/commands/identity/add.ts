@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
+import { type SenvProjectConfig, CURRENT_PROJECT_CONFIG_VERSION } from "../../core/store";
 import { isValidIdentityName, getCommandOptions } from "../utils";
 
 export const identityAddCmd = new Command("add")
@@ -14,7 +15,19 @@ export const identityAddCmd = new Command("add")
         process.exit(1);
       }
 
-      const config = await store.readProjectConfig();
+      let config: SenvProjectConfig;
+      try {
+        config = await store.readProjectConfig();
+      } catch (e: any) {
+        if (e.message === ".senv.json not found in the current directory.") {
+          config = {
+            version: CURRENT_PROJECT_CONFIG_VERSION,
+            identities: {},
+          };
+        } else {
+          throw e;
+        }
+      }
       if (config.identities[idName]) {
         console.error(`Identity '${idName}' already exists in .senv.json.`);
         process.exit(1);

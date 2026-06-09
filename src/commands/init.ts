@@ -3,11 +3,12 @@ import * as senvCrypto from "../core/crypto";
 import * as store from "../core/store";
 import { type SenvProjectConfig, type SenvPayload, CURRENT_PROJECT_CONFIG_VERSION } from "../core/store";
 import * as fs from "node:fs/promises";
-import { getCommandOptions } from "./utils";
+import { isValidIdentityName, getCommandOptions } from "./utils";
 
 export const initCmd = new Command("init")
   .description("Initializes a new .senv.json and creates a local keypair if missing")
-  .action(async (options, command) => {
+  .argument("[ID_NAME]", "Optional identity name (default: derived from $USER)")
+  .action(async (idNameArg: string | undefined, _options, command) => {
     const { keystorePath } = getCommandOptions(command);
     const projectKeystore = await store.getProjectKeystore(keystorePath);
     const configPath = store.getProjectConfigPath();
@@ -43,13 +44,22 @@ export const initCmd = new Command("init")
       return;
     }
 
-    const rawUser = process.env.USER || process.env.USERNAME || "user";
-    const sanitizedUser = rawUser
-      .replace(/[^A-Za-z0-9._-]+/g, "-")
-      .replace(/-+/g, "-")
-      .replace(/^[.-]+|[.-]+$/g, "");
-    const baseIdentity = sanitizedUser.length > 0 ? sanitizedUser : "user";
-    const idName = `${baseIdentity}-local`;
+    let idName: string;
+    if (idNameArg !== undefined && idNameArg !== "") {
+      if (!isValidIdentityName(idNameArg)) {
+        console.error(`Invalid identity name '${idNameArg}'. Use letters, digits, '.', '_' or '-' only.`);
+        process.exit(1);
+      }
+      idName = idNameArg;
+    } else {
+      const rawUser = process.env.USER || process.env.USERNAME || "user";
+      const sanitizedUser = rawUser
+        .replace(/[^A-Za-z0-9._-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^[.-]+|[.-]+$/g, "");
+      const baseIdentity = sanitizedUser.length > 0 ? sanitizedUser : "user";
+      idName = `${baseIdentity}-local`;
+    }
 
     if (!projectKeystore[idName]) {
       console.log(`Generating new RSA keypair for identity: ${idName}...`);

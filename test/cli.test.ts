@@ -92,7 +92,7 @@ describe("CLI operations", () => {
 
     const listRes = await runCLI("key", "list");
     expect(listRes.exitCode).toBe(0);
-    expect(listRes.stdout.toString()).toContain("API_KEY=s***3 (from: testuser-local)");
+    expect(listRes.stdout.toString()).toContain("API_KEY = s***3 (from: testuser-local)");
   });
 
   it("handles environment flags correctly", async () => {
@@ -721,6 +721,32 @@ describe("CLI operations", () => {
     expect(restrictedRes.stdout.toString()).not.toContain("ONLY_LOCAL");
   });
 
+  it("key list --identity without -e lists keys from all environments", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "DEV_ONLY", "dev-val");
+    await runCLI("key", "add", "testuser-local", "PROD_ONLY", "prod-val", "-e", "prod");
+    await runCLI("key", "add", "testuser-local", "BOTH", "dev");
+    await runCLI("key", "add", "testuser-local", "BOTH", "prod", "-e", "prod");
+
+    const allRes = await runCLI("key", "list", "-i", "testuser-local");
+    expect(allRes.exitCode).toBe(0);
+    const out = allRes.stdout.toString();
+    expect(out).toContain("Keys for environment 'dev' [testuser-local]:");
+    expect(out).toContain("Keys for environment 'prod' [testuser-local]:");
+    expect(out).toContain("DEV_ONLY = ***");
+    expect(out).toContain("PROD_ONLY = ***");
+    expect(out).toMatch(/Keys for environment 'dev' \[testuser-local\]:\n.*BOTH = \*\*\*/s);
+    expect(out).toMatch(/Keys for environment 'prod' \[testuser-local\]:\n.*BOTH = \*\*\*/s);
+
+    const devOnlyRes = await runCLI("key", "list", "-i", "testuser-local", "-e", "dev");
+    expect(devOnlyRes.exitCode).toBe(0);
+    const devOut = devOnlyRes.stdout.toString();
+    expect(devOut).toContain("Keys for environment 'dev'");
+    expect(devOut).toContain("DEV_ONLY");
+    expect(devOut).toContain("BOTH");
+    expect(devOut).not.toContain("PROD_ONLY");
+  });
+
   it("importing bundle with no publicKey and no existing publicKey errors", async () => {
     await runCLI("init");
     const bundle = Buffer.from(
@@ -871,6 +897,32 @@ describe("CLI operations", () => {
     expect(initRes.exitCode).toBe(0);
     const out = initRes.stdout.toString();
     expect(out).toContain("user-local");
+  });
+
+  it("init accepts a custom identity name", async () => {
+    const { exitCode, stdout } = await runCLI("init", "my-custom-id");
+    expect(exitCode).toBe(0);
+    expect(stdout.toString()).toContain("Identity 'my-custom-id' added.");
+
+    const config = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(Object.keys(config.identities)).toEqual(["my-custom-id"]);
+  });
+
+  it("init rejects an invalid custom identity name", async () => {
+    const res = await runCLI("init", "bad id!");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("Invalid identity name");
+  });
+
+  it("identity add creates .senv.json when missing", async () => {
+    const addRes = await runCLI("identity", "add", "standalone-id");
+    expect(addRes.exitCode).toBe(0);
+    expect(addRes.stdout.toString()).toContain("Successfully added identity 'standalone-id'.");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    expect(await fs.exists(configPath)).toBe(true);
+    const config = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(Object.keys(config.identities)).toEqual(["standalone-id"]);
   });
 
   it("migrate skips oversized value exceeding 16KB", async () => {
