@@ -3,6 +3,7 @@ import * as store from "../src/core/store";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
+import { execSync } from "node:child_process";
 
 describe("store operations", () => {
   let tempConfigDir: string;
@@ -221,5 +222,52 @@ describe("store operations", () => {
     };
     await store.writeProjectConfig(config);
     expect(await store.readProjectConfig()).toEqual(config);
+  });
+
+  it("readProjectConfig falls back to git root when .senv.json is missing in cwd", async () => {
+    execSync("git init -b main -q", { cwd: tempProjectDir, stdio: "ignore" });
+
+    const config: store.SenvProjectConfig = {
+      version: "1.0",
+      identities: { "id1": "encrypted" },
+    };
+    await fs.writeFile(path.join(tempProjectDir, ".senv.json"), JSON.stringify(config));
+
+    const subdir = path.join(tempProjectDir, "deep", "nested");
+    await fs.mkdir(subdir, { recursive: true });
+
+    delete process.env.SENV_PROJECT_DIR;
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(subdir);
+      const result = await store.readProjectConfig();
+      expect(result).toEqual(config);
+    } finally {
+      process.chdir(prevCwd);
+      process.env.SENV_PROJECT_DIR = tempProjectDir;
+    }
+  });
+
+  it("readProjectConfig skips git root fallback when SENV_PROJECT_DIR is set", async () => {
+    execSync("git init -b main -q", { cwd: tempProjectDir, stdio: "ignore" });
+
+    const config: store.SenvProjectConfig = {
+      version: "1.0",
+      identities: { "id1": "encrypted" },
+    };
+    await fs.writeFile(path.join(tempProjectDir, ".senv.json"), JSON.stringify(config));
+
+    const subdir = path.join(tempProjectDir, "nested");
+    await fs.mkdir(subdir, { recursive: true });
+
+    process.env.SENV_PROJECT_DIR = subdir;
+
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(subdir);
+      await expect(store.readProjectConfig()).rejects.toThrow(".senv.json not found");
+    } finally {
+      process.chdir(prevCwd);
+    }
   });
 });

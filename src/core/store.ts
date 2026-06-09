@@ -1,6 +1,7 @@
 import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
+import { execSync } from "node:child_process";
 
 export interface Identity {
   publicKey: string;
@@ -145,6 +146,14 @@ export function getProjectConfigPath(): string {
   return path.join(projDir, ".senv.json");
 }
 
+function getGitRoot(startDir: string): string | null {
+  try {
+    return execSync("git rev-parse --show-toplevel", { cwd: startDir, encoding: "utf-8" }).trim();
+  } catch {
+    return null;
+  }
+}
+
 export async function readProjectConfig(): Promise<SenvProjectConfig> {
   try {
     const p = getProjectConfigPath();
@@ -158,6 +167,25 @@ export async function readProjectConfig(): Promise<SenvProjectConfig> {
     return validateProjectConfigVersion(parsed);
   } catch (err: any) {
     if (err.code === "ENOENT") {
+      if (!process.env.SENV_PROJECT_DIR) {
+        const cwd = process.cwd();
+        const gitRoot = getGitRoot(cwd);
+        if (gitRoot && gitRoot !== cwd) {
+          try {
+            const gitConfigPath = path.join(gitRoot, ".senv.json");
+            const content = await readFile(gitConfigPath, "utf-8");
+            let parsed: any;
+            try {
+              parsed = JSON.parse(content);
+            } catch (parseErr: any) {
+              throw new Error(`Failed to parse .senv.json JSON: ${parseErr.message}`);
+            }
+            return validateProjectConfigVersion(parsed);
+          } catch (gitErr: any) {
+            if (gitErr.code !== "ENOENT") throw gitErr;
+          }
+        }
+      }
       throw new Error(".senv.json not found in the current directory.");
     }
     if (err.message.includes("Unsupported .senv.json version") || err.message.includes("Failed to parse .senv.json JSON")) {
