@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "bun:test";
+import { describe, expect, it, beforeEach, afterEach, spyOn } from "bun:test";
 import * as store from "../src/core/store";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -195,5 +195,31 @@ describe("store operations", () => {
     const stats = await fs.stat(path.join(tempProjectDir, ".senv.json"));
     const mode = stats.mode & 0o777;
     expect(mode).toBe(0o600);
+  });
+
+  it("atomicWriteFile removes tmp file and rethrows on write failure", async () => {
+    const target = path.join(tempProjectDir, "atomic-fail.json");
+    const tmpPath = target + ".tmp";
+    const realOpen = fs.open.bind(fs);
+    const openSpy = spyOn(fs, "open").mockImplementation(async (filePath, flags, mode) => {
+      const fh = await realOpen(filePath as string, flags as string, mode as number);
+      spyOn(fh, "writeFile").mockRejectedValue(new Error("simulated write failure"));
+      return fh;
+    });
+
+    await expect(store.atomicWriteFile(target, "data", 0o600)).rejects.toThrow("simulated write failure");
+    expect(await fs.exists(tmpPath)).toBe(false);
+    expect(await fs.exists(target)).toBe(false);
+    openSpy.mockRestore();
+  });
+
+  it("writes and reads project config with presets", async () => {
+    const config: store.SenvProjectConfig = {
+      version: "1.0",
+      presets: { backend: ["API_KEY", "DB_URL"] },
+      identities: { "id1": "encrypted" },
+    };
+    await store.writeProjectConfig(config);
+    expect(await store.readProjectConfig()).toEqual(config);
   });
 });

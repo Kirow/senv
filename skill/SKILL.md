@@ -15,6 +15,7 @@ Terminal CLI for decentralized, encrypted env-var management. Payloads live in `
 
 - Project contains `.senv.json`
 - User asks to add, update, list, remove, or load encrypted env vars
+- User wants named subsets of keys (`preset`) for `senv use <preset>`
 - User needs to share access or resolve a `.senv.json` git merge conflict
 - User wants AI agents to manage secrets without plain `.env` files in source control
 
@@ -45,6 +46,7 @@ Install this skill into a project: `senv install skill` → `.agents/skills/secu
 ## Naming constraints
 
 - **Identity names:** `/^[A-Za-z0-9._-]+$/` (e.g. `alice-local`)
+- **Preset names:** same rules as identity names
 - **Env var names:** `/^[A-Za-z_][A-Za-z0-9_]*$/` (standard shell identifier)
 
 ## Common workflows
@@ -86,9 +88,28 @@ When the same key exists in multiple identities, `key get` / `key list` use the 
 ```bash
 eval $(senv use)
 eval $(senv use -e prod)
+eval $(senv use backend)
 ```
 
 `use` may emit conflict warnings on stderr when the same key is defined in multiple identities. These are non-fatal; the first identity's value is used. To resolve, pass `-i <identity>` to `key get` / `key list`.
+
+With a preset name, `use` exports only keys listed in that preset (stored in plaintext under `presets` in `.senv.json`). Missing or undecryptable keys emit `[WARN]` on stderr; export continues for available keys.
+
+### Manage presets
+
+Presets are plaintext key-name lists in `.senv.json` (safe to commit). They do not need to exist as secrets yet when added.
+
+```bash
+senv preset add backend API_KEY DB_URL
+senv preset add backend REDIS_URL
+senv preset rm backend DB_URL
+senv preset rm backend
+senv preset check
+```
+
+- `preset add` is incremental (dedupes; does not remove existing keys)
+- `preset rm <name>` deletes the whole preset; `preset rm <name> KEY ...` removes specific keys
+- `preset check` warns for each missing key across all presets for the target env (exit 0)
 
 ### Import from a .env file
 
@@ -127,9 +148,9 @@ Auto-detects conflict markers in `.senv.json`. Without markers, provide both fil
 
 Initialize `.senv.json` and create a local keypair if missing. If `.senv.json` already exists, reports keystore mismatches and duplicate keys.
 
-### `senv use`
+### `senv use [PRESET_NAME]`
 
-Output `export KEY=value` lines for `eval $(senv use)`. Aggregates across all decryptable identities for the target env.
+Output `export KEY=value` lines for `eval $(senv use)`. Without a preset, aggregates across all decryptable identities for the target env. With a preset name, exports only keys in that preset (in list order). Warns on stderr for missing preset keys.
 
 ### `senv merge [FILE_A] [FILE_B]`
 
@@ -179,6 +200,18 @@ Add or update a key in an identity's payload. Max value size: 16 KB.
 
 Remove a key from an identity for the target env.
 
+### `senv preset add <PRESET_NAME> <KEY...>`
+
+Add keys to a preset (incremental, deduped). Does not require keys to exist in the payload yet.
+
+### `senv preset rm <PRESET_NAME> [KEY...]`
+
+Remove an entire preset, or specific keys from it. Deletes the preset entry when the key list becomes empty.
+
+### `senv preset check`
+
+Warn on stderr for each preset key that is missing or not decryptable for the target env. Exit 0.
+
 ### `senv install skill`
 
 Install this skill file into `.agents/skills/secure-env-tool/SKILL.md` (create or replace).
@@ -188,6 +221,7 @@ Install this skill file into `.agents/skills/secure-env-tool/SKILL.md` (create o
 - AES-256-GCM encrypts the key-value payload
 - RSA-2048 (PKCS1_OAEP, SHA-256) encrypts the AES DEK
 - Each identity in `.senv.json` is its own encrypted blob for that identity's public key
+- `presets` (optional) hold plaintext env-var name lists for partial `senv use`
 - Sharing = sharing the private key (export/import), not multi-recipient encryption
 
 ## Test and automation

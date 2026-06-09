@@ -13,6 +13,46 @@ Instead of maintaining `.env` files that cannot be safely committed, `senv` encr
 
 `.senv.json` stores one encrypted blob **per identity** (e.g., `alice-local`, `bob-local`). Each identity's blob is encrypted with that identity's RSA public key, so only holders of the corresponding private key can decrypt it. Your private keys are kept secure in your local keystore (`~/.config/senv/identity.json`, created with `0600` permissions) and are never committed.
 
+### File structures
+
+**`.senv.json`** (safe to commit):
+
+```json
+{
+  "version": "1.0",
+  "presets": {
+    "backend": ["API_KEY", "DB_URL"],
+    "frontend": ["PUBLIC_URL"]
+  },
+  "identities": {
+    "alice-local": "<base64 RSA-encrypted AES-GCM payload>",
+    "bob-local": "<base64 RSA-encrypted AES-GCM payload>"
+  }
+}
+```
+
+- `identities` — one encrypted blob per identity; values are opaque base64 strings.
+- `presets` — optional plaintext lists of env-var **names** (not values); used by `senv use <preset>` and `senv preset`.
+
+**`~/.config/senv/identity.json`** (never commit):
+
+```json
+{
+  "version": "1.0",
+  "projects": {
+    "/absolute/path/to/your/project": {
+      "alice-local": {
+        "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----",
+        "privateKey": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+      }
+    }
+  }
+}
+```
+
+- `projects` — keys are absolute project directory paths; values are identity name → RSA keypair (PEM).
+- Override the keystore path with `-k/--keystore` or `SENV_CONFIG_DIR`.
+
 ## Sharing Access
 To allow another team member to access a given identity's secrets, share that identity's private key with them out-of-band (e.g., via a secure channel). They import the base64-encoded keypair into their local keystore with `senv identity import`. There is no automatic key distribution or multi-recipient encryption; each identity is a single-recipient envelope.
 
@@ -101,9 +141,28 @@ eval $(senv use)
 
 # Or for a specific environment
 eval $(senv use -e prod)
+
+# Or only keys from a named preset
+eval $(senv use backend)
 ```
 
-### 4. Share Access
+### 4. Presets
+Named subsets of keys stored in plaintext inside `.senv.json`:
+```bash
+# Define a preset (incremental; dedupes keys)
+senv preset add backend API_KEY DB_URL
+
+# Remove specific keys or the whole preset
+senv preset rm backend DB_URL
+senv preset rm backend
+
+# Verify all preset keys are decryptable for the current env
+senv preset check
+```
+
+`preset check` and `senv use <preset>` print a `[WARN]` for each key in the preset that is missing or not decryptable for the target environment.
+
+### 5. Share Access
 To allow another team member to access a given identity, export that identity's keys and have the recipient import them.
 
 **Export your keys:**
@@ -119,13 +178,13 @@ senv identity export my-identity --decrypt-only
 senv identity import "<BASE64_STRING>"
 ```
 
-### 5. Git Merge Conflicts
+### 6. Git Merge Conflicts
 If multiple people edit `.senv.json` simultaneously, use the merge command to safely merge conflicting identity payloads:
 ```bash
 senv merge .senv.json .senv.incoming.json
 ```
 
-### 6. Agent Skill
+### 7. Agent Skill
 Install the senv agent skill so AI tools know how to use the CLI in this project:
 ```bash
 senv install skill

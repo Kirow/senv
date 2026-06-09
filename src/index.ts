@@ -21,6 +21,10 @@ import { keyRmCmd } from "./commands/key/rm";
 
 import { installSkillCmd } from "./commands/install/skill";
 
+import { presetAddCmd } from "./commands/preset/add";
+import { presetRmCmd } from "./commands/preset/rm";
+import { presetCheckCmd } from "./commands/preset/check";
+
 const program = new Command();
 
 program
@@ -51,6 +55,12 @@ keyGroup.addCommand(keyGetCmd);
 keyGroup.addCommand(keyAddCmd);
 keyGroup.addCommand(keyRmCmd);
 program.addCommand(keyGroup);
+
+const presetGroup = new Command("preset").description("Manage named key presets");
+presetGroup.addCommand(presetAddCmd);
+presetGroup.addCommand(presetRmCmd);
+presetGroup.addCommand(presetCheckCmd);
+program.addCommand(presetGroup);
 
 const installGroup = new Command("install").description("Install project integrations");
 installGroup.addCommand(installSkillCmd);

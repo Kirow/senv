@@ -23,6 +23,9 @@ export interface SenvProjectConfig {
   identities: {
     [idName: string]: string;
   };
+  presets?: {
+    [presetName: string]: string[];
+  };
 }
 
 export interface SenvPayloadItem {

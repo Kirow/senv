@@ -25,6 +25,42 @@ function resolveDefaultMergeFilePath(): string {
   return store.getProjectConfigPath();
 }
 
+export function mergePresets(
+  a?: Record<string, string[]>,
+  b?: Record<string, string[]>
+): Record<string, string[]> | undefined {
+  if (!a && !b) return undefined;
+  const merged: Record<string, string[]> = { ...(a || {}) };
+  if (b) {
+    for (const [name, keysB] of Object.entries(b)) {
+      if (!merged[name]) {
+        merged[name] = [...keysB];
+      } else {
+        const seen = new Set(merged[name]);
+        for (const k of keysB) {
+          if (!seen.has(k)) {
+            merged[name]!.push(k);
+            seen.add(k);
+          }
+        }
+      }
+    }
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+export function extractPresetsFromConflictedContent(content: string): Record<string, string[]> | undefined {
+  const markerIdx = content.indexOf("<<<<<<<");
+  const prefix = markerIdx >= 0 ? content.slice(0, markerIdx) : content;
+  const match = prefix.match(/"presets"\s*:\s*(\{[\s\S]*?\})\s*,/);
+  if (!match) return undefined;
+  try {
+    return JSON.parse(match[1]!) as Record<string, string[]>;
+  } catch {
+    return undefined;
+  }
+}
+
 export function mergeProjectConfigs(
   configA: SenvProjectConfig,
   configB: SenvProjectConfig,
@@ -32,7 +68,11 @@ export function mergeProjectConfigs(
   sourceLabel: string,
   theirsLabel?: string
 ): { config: SenvProjectConfig; messages: string[] } {
-  const merged = { ...configA, identities: { ...configA.identities } };
+  const merged: SenvProjectConfig = {
+    ...configA,
+    identities: { ...configA.identities },
+    presets: mergePresets(configA.presets, configB.presets),
+  };
   const messages: string[] = [];
 
   for (const [idName, encryptedB] of Object.entries(configB.identities)) {
@@ -111,6 +151,14 @@ export const mergeCmd = new Command("merge")
       }
 
       const { config: merged, messages } = mergeProjectConfigs(configA, configB, projectKeystore, sourceLabel, theirsLabel);
+
+      if (conflict.hasGitConflictMarkers(contentA)) {
+        const extractedPresets = extractPresetsFromConflictedContent(contentA);
+        if (extractedPresets) {
+          merged.presets = mergePresets(extractedPresets, merged.presets);
+        }
+      }
+
       for (const msg of messages) console.log(msg);
       await writeMergedConfig(targetPath, merged);
       console.log(`Merge complete. Merged into ${targetPath}.`);

@@ -1046,4 +1046,173 @@ describe("CLI operations", () => {
       .quiet();
     expect(mergeRes.exitCode).toBe(0);
   });
+
+  it("preset add creates and extends presets incrementally", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "API_KEY", "secret");
+    await runCLI("key", "add", "testuser-local", "DB_URL", "postgres://localhost");
+
+    const addRes = await runCLI("preset", "add", "backend", "API_KEY", "DB_URL");
+    expect(addRes.exitCode).toBe(0);
+    expect(addRes.stdout.toString()).toContain("Added 2 key(s)");
+
+    const config = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(config.presets.backend).toEqual(["API_KEY", "DB_URL"]);
+
+    const extendRes = await runCLI("preset", "add", "backend", "DB_URL", "REDIS_URL");
+    expect(extendRes.exitCode).toBe(0);
+    expect(extendRes.stdout.toString()).toContain("REDIS_URL");
+
+    const config2 = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(config2.presets.backend).toEqual(["API_KEY", "DB_URL", "REDIS_URL"]);
+  });
+
+  it("preset add rejects invalid preset and key names", async () => {
+    await runCLI("init");
+
+    const badPreset = await runCLI("preset", "add", "bad name", "API_KEY");
+    expect(badPreset.exitCode).toBe(1);
+    expect(badPreset.stderr.toString()).toContain("Invalid preset name");
+
+    const badKey = await runCLI("preset", "add", "backend", "bad-key");
+    expect(badKey.exitCode).toBe(1);
+    expect(badKey.stderr.toString()).toContain("Invalid environment variable name");
+
+    const noKeys = await runCLI("preset", "add", "backend");
+    expect(noKeys.exitCode).toBe(1);
+    expect(noKeys.stderr.toString()).toContain("At least one key");
+  });
+
+  it("preset rm deletes entire preset or specific keys", async () => {
+    await runCLI("init");
+    await runCLI("preset", "add", "backend", "API_KEY", "DB_URL", "REDIS_URL");
+
+    const rmKeyRes = await runCLI("preset", "rm", "backend", "DB_URL");
+    expect(rmKeyRes.exitCode).toBe(0);
+
+    const config = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(config.presets.backend).toEqual(["API_KEY", "REDIS_URL"]);
+
+    const rmAllRes = await runCLI("preset", "rm", "backend");
+    expect(rmAllRes.exitCode).toBe(0);
+
+    const config2 = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(config2.presets).toBeUndefined();
+  });
+
+  it("preset rm errors when preset not found", async () => {
+    await runCLI("init");
+    const res = await runCLI("preset", "rm", "ghost");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("not found");
+  });
+
+  it("use with preset exports only preset keys", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "API_KEY", "secret");
+    await runCLI("key", "add", "testuser-local", "DB_URL", "postgres");
+    await runCLI("key", "add", "testuser-local", "EXTRA", "ignored");
+    await runCLI("preset", "add", "backend", "API_KEY", "DB_URL");
+
+    const useAll = await runCLI("use");
+    expect(useAll.stdout.toString()).toContain("EXTRA");
+
+    const usePreset = await runCLI("use", "backend");
+    expect(usePreset.exitCode).toBe(0);
+    const out = usePreset.stdout.toString();
+    expect(out).toContain("export API_KEY=");
+    expect(out).toContain("export DB_URL=");
+    expect(out).not.toContain("EXTRA");
+  });
+
+  it("use with preset warns on missing keys but exports available ones", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "API_KEY", "secret");
+    await runCLI("preset", "add", "backend", "API_KEY", "MISSING_KEY");
+
+    const res = await runCLI("use", "backend");
+    expect(res.exitCode).toBe(0);
+    expect(res.stderr.toString()).toContain("[WARN] Preset 'backend': key 'MISSING_KEY'");
+    expect(res.stdout.toString()).toContain("export API_KEY=");
+    expect(res.stdout.toString()).not.toContain("MISSING_KEY");
+  });
+
+  it("use with unknown preset exits 1", async () => {
+    await runCLI("init");
+    const res = await runCLI("use", "ghost");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("not found");
+  });
+
+  it("preset check warns for missing keys across all presets", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "API_KEY", "secret");
+    await runCLI("preset", "add", "backend", "API_KEY", "MISSING_A");
+    await runCLI("preset", "add", "frontend", "MISSING_B");
+
+    const res = await runCLI("preset", "check");
+    expect(res.exitCode).toBe(0);
+    const stderr = res.stderr.toString();
+    expect(stderr).toContain("MISSING_A");
+    expect(stderr).toContain("MISSING_B");
+    expect(stderr).not.toContain("API_KEY");
+  });
+
+  it("merge unions presets from two config files", async () => {
+    await runCLI("init");
+    await runCLI("preset", "add", "backend", "API_KEY", "DB_URL");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const configA = JSON.parse(await fs.readFile(configPath, "utf-8"));
+
+    const configB = {
+      version: "1.0",
+      identities: {},
+      presets: {
+        backend: ["DB_URL", "REDIS_URL"],
+        frontend: ["PUBLIC_URL"],
+      },
+    };
+    const fileB = path.join(tempProjectDir, "other.senv.json");
+    await fs.writeFile(fileB, JSON.stringify(configB, null, 2));
+
+    const mergeRes = await runCLI("merge", configPath, fileB);
+    expect(mergeRes.exitCode).toBe(0);
+
+    const merged = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(merged.presets.backend).toEqual(["API_KEY", "DB_URL", "REDIS_URL"]);
+    expect(merged.presets.frontend).toEqual(["PUBLIC_URL"]);
+    expect(merged.identities).toEqual(configA.identities);
+  });
+
+  it("merge preserves presets from conflicted file prefix", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "KEY_OURS", "val_ours");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const headConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const oursBlob = headConfig.identities["testuser-local"];
+
+    const conflicted = `{
+  "version": "1.0",
+  "presets": {
+    "backend": ["API_KEY", "DB_URL"]
+  },
+  "identities": {
+<<<<<<< HEAD
+    "testuser-local": "${oursBlob}"
+=======
+    "testuser-local": "${oursBlob}"
+>>>>>>> branch
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const mergeRes = await runCLI("merge");
+    expect(mergeRes.exitCode).toBe(0);
+
+    const merged = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(merged.presets.backend).toEqual(["API_KEY", "DB_URL"]);
+    expect(merged.identities["testuser-local"]).toBeTruthy();
+  });
 });

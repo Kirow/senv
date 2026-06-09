@@ -6,6 +6,55 @@ export function isValidIdentityName(name: string): boolean {
   return typeof name === "string" && /^[A-Za-z0-9._-]+$/.test(name);
 }
 
+export function isValidPresetName(name: string): boolean {
+  return isValidIdentityName(name);
+}
+
+export interface AccessibleKeyEntry {
+  value: string;
+  identityName: string;
+  identities: string[];
+}
+
+export async function getAccessibleKeyMap(
+  env: string,
+  keystorePath?: string
+): Promise<Map<string, AccessibleKeyEntry>> {
+  const payloads = await getAccessiblePayloads(env, keystorePath);
+  const aggregated = new Map<string, AccessibleKeyEntry>();
+
+  for (const { identityName, payload } of payloads) {
+    for (const item of payload) {
+      const existing = aggregated.get(item.key);
+      if (!existing) {
+        aggregated.set(item.key, { value: item.value, identityName, identities: [identityName] });
+      } else if (!existing.identities.includes(identityName)) {
+        existing.identities.push(identityName);
+      }
+    }
+  }
+
+  return aggregated;
+}
+
+export function warnMissingPresetKeys(
+  presetName: string,
+  keys: string[],
+  accessibleKeys: Set<string> | Map<string, unknown>,
+  env: string
+): void {
+  const hasKey = (key: string) =>
+    accessibleKeys instanceof Map ? accessibleKeys.has(key) : accessibleKeys.has(key);
+
+  for (const key of keys) {
+    if (!hasKey(key)) {
+      console.warn(
+        `[WARN] Preset '${presetName}': key '${key}' not available for environment '${env}'.`
+      );
+    }
+  }
+}
+
 export function isValidEnvName(name: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
 }
