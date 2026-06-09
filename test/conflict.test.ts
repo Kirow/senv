@@ -129,4 +129,37 @@ describe("conflict parser", () => {
       pickConflictBlobWithoutPrivateKey("user-A-local", "blob-ours", "blob-theirs")
     ).toBe("blob-ours");
   });
+
+  it("rejects conflict block with unsupported version", () => {
+    const badVersion = `{
+  "version": "99.0",
+  "identities": {
+<<<<<<< HEAD
+    "alice-local": "blob-ours"
+=======
+    "alice-local": "blob-theirs"
+>>>>>>> feature
+  }
+}`;
+    expect(() => parseGitConflictSenv(badVersion)).toThrow(
+      /Unsupported \.senv\.json version/
+    );
+  });
+
+  it("handles conflict block with empty label on >>>>>>>", () => {
+    const noLabel = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "alice-local": "blob-ours"
+=======
+    "alice-local": "blob-theirs"
+>>>>>>>
+  }
+}`;
+    const { ours, theirs, theirsLabel } = parseGitConflictSenv(noLabel);
+    expect(ours.identities["alice-local"]).toBe("blob-ours");
+    expect(theirs.identities["alice-local"]).toBe("blob-theirs");
+    expect(theirsLabel).toBe("");
+  });
 });

@@ -799,4 +799,199 @@ describe("CLI operations", () => {
     const res2 = await runCLI("install", "skill");
     expect(res2.exitCode).toBe(0);
   });
+
+  it("key rm removes key from one env but not another", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "ENV_KEY", "dev_val");
+    await runCLI("key", "add", "testuser-local", "ENV_KEY", "prod_val", "-e", "prod");
+
+    await runCLI("key", "rm", "testuser-local", "ENV_KEY");
+
+    const getDev = await runCLI("key", "get", "ENV_KEY");
+    expect(getDev.exitCode).toBe(1);
+
+    const getProd = await runCLI("key", "get", "ENV_KEY", "-e", "prod");
+    expect(getProd.exitCode).toBe(0);
+    expect(getProd.stdout.toString().trim()).toBe("prod_val");
+  });
+
+  it("identity export fails for non-existent identity", async () => {
+    await runCLI("init");
+    const res = await runCLI("identity", "export", "ghost");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("not found");
+  });
+
+  it("identity import rejects bundle with invalid identity name", async () => {
+    const bundle = Buffer.from(
+      JSON.stringify({ idName: "bad name!", publicKey: "KEY", privateKey: "KEY" }),
+      "utf8"
+    ).toString("base64");
+
+    const res = await runCLI("identity", "import", bundle, "-y");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("Invalid identity name");
+  });
+
+  it("identity add fails when identity already exists in config", async () => {
+    await runCLI("init");
+    const addRes = await runCLI("identity", "add", "testuser-local");
+    expect(addRes.exitCode).toBe(1);
+    expect(addRes.stderr.toString()).toContain("already exists");
+  });
+
+  it("key rm for identity missing public key errors on re-encrypt", async () => {
+    await runCLI("init");
+    await runCLI("identity", "add", "pkless");
+    await runCLI("key", "add", "pkless", "TO_DEL", "v");
+
+    const freshKs = await fs.mkdtemp(path.join(os.tmpdir(), "senv-test-pkless-"));
+    try {
+      const b64 = (await runCLI("identity", "export", "pkless", "--decrypt-only")).stdout.toString().trim();
+      await runCLI("identity", "import", b64, "-y", "--keystore", path.join(freshKs, "identity.json"));
+      const rmRes = await runCLI("key", "rm", "pkless", "TO_DEL", "--keystore", path.join(freshKs, "identity.json"));
+      expect(rmRes.exitCode).toBe(1);
+    } finally {
+      await fs.rm(freshKs, { recursive: true, force: true });
+    }
+  });
+
+  it("init defaults to 'user' identity when USER and USERNAME are unset", async () => {
+    const stripped = { ...process.env };
+    delete stripped.USER;
+    delete stripped.USERNAME;
+    const initRes = await $`bun run ./src/index.ts init`
+      .env({
+        ...stripped,
+        SENV_CONFIG_DIR: tempConfigDir,
+        SENV_PROJECT_DIR: tempProjectDir,
+      })
+      .nothrow()
+      .quiet();
+    expect(initRes.exitCode).toBe(0);
+    const out = initRes.stdout.toString();
+    expect(out).toContain("user-local");
+  });
+
+  it("migrate skips oversized value exceeding 16KB", async () => {
+    await runCLI("init");
+    const huge = "x".repeat(17 * 1024);
+    const envPath = path.join(tempProjectDir, ".env");
+    await fs.writeFile(envPath, `SMALL=1\nHUGE=${huge}\n`);
+
+    const migrateRes = await runCLI("migrate", "testuser-local", envPath);
+    expect(migrateRes.exitCode).toBe(0);
+    expect(migrateRes.stderr.toString()).toContain("16");
+    expect(migrateRes.stdout.toString()).toContain("- SMALL");
+  });
+
+  it("key rm for missing identity returns specific error", async () => {
+    await runCLI("init");
+    const res = await runCLI("key", "rm", "ghost-id", "KEY");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("missing from .senv.json");
+  });
+
+  it("use warns on stderr when keys conflict across identities", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "AMBIG", "v1");
+    await runCLI("identity", "add", "other");
+    await runCLI("key", "add", "other", "AMBIG", "v2");
+
+    const res = await runCLI("use");
+    expect(res.exitCode).toBe(0);
+    expect(res.stderr.toString()).toContain("[WARN] Conflict for key 'AMBIG'");
+    expect(res.stderr.toString()).toContain("other");
+    expect(res.stdout.toString()).toContain("AMBIG");
+  });
+
+  it("merge with no args and no conflict markers errors", async () => {
+    await runCLI("init");
+
+    const res = await runCLI("merge");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("no git conflict markers");
+  });
+
+  it("merge with missing FILE_B errors", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "K", "V");
+
+    const res = await runCLI("merge", path.join(tempProjectDir, ".senv.json"), "nonexistent.json");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("file not found");
+  });
+
+  it("merge resolves conflict block with multiple identities", async () => {
+    await runCLI("init");
+    await runCLI("identity", "add", "other");
+    await runCLI("key", "add", "testuser-local", "LOCAL_KEY", "lv");
+    await runCLI("key", "add", "other", "OTHER_KEY", "ov");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const config = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const localBlob = config.identities["testuser-local"];
+    const otherBlob = config.identities["other"];
+
+    const conflicted = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "testuser-local": "${localBlob}",
+    "other": "${otherBlob}"
+=======
+    "testuser-local": "${localBlob}",
+    "other": "${otherBlob}"
+>>>>>>> branch
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const mergeRes = await runCLI("merge");
+    expect(mergeRes.exitCode).toBe(0);
+    expect((await fs.readFile(configPath, "utf-8"))).not.toContain("<<<<<<<");
+
+    const getLocal = await runCLI("key", "get", "LOCAL_KEY");
+    expect(getLocal.stdout.toString().trim()).toBe("lv");
+
+    const getOther = await runCLI("key", "get", "OTHER_KEY");
+    expect(getOther.stdout.toString().trim()).toBe("ov");
+  });
+
+  it("merge with custom --keystore flag", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "K", "V");
+
+    const customKs = path.join(tempConfigDir, "custom-merge.json");
+    const exportRes = await runCLI("identity", "export", "testuser-local");
+    const b64 = exportRes.stdout.toString().trim();
+    await runCLI("identity", "import", b64, "-y", "--keystore", customKs);
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const config = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const blob = config.identities["testuser-local"];
+
+    const conflicted = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "testuser-local": "${blob}"
+=======
+    "testuser-local": "${blob}"
+>>>>>>> branch
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const mergeRes = await $`bun run ./src/index.ts merge --keystore ${customKs}`
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir,
+        SENV_PROJECT_DIR: tempProjectDir,
+        USER: "testuser",
+      })
+      .nothrow()
+      .quiet();
+    expect(mergeRes.exitCode).toBe(0);
+  });
 });

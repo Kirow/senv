@@ -173,4 +173,27 @@ describe("store operations", () => {
     await fs.mkdir(configPath, { recursive: true });
     await expect(store.readProjectConfig()).rejects.toThrow(/Failed to read \.senv\.json/);
   });
+
+  it("readProjectConfig with invalid JSON throws a clear error", async () => {
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    await fs.writeFile(configPath, "{ this is not valid JSON", "utf-8");
+    await expect(store.readProjectConfig()).rejects.toThrow(/Failed to parse \.senv\.json JSON/);
+  });
+
+  it("readProjectConfig throws on unsupported version", async () => {
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    await fs.writeFile(configPath, JSON.stringify({ version: "99.0", identities: {} }), "utf-8");
+    await expect(store.readProjectConfig()).rejects.toThrow(/Unsupported \.senv\.json version/);
+  });
+
+  it("writeProjectConfig creates file with 0600 permissions", async () => {
+    const config: store.SenvProjectConfig = {
+      version: "1.0",
+      identities: { "id1": "encrypted" },
+    };
+    await store.writeProjectConfig(config);
+    const stats = await fs.stat(path.join(tempProjectDir, ".senv.json"));
+    const mode = stats.mode & 0o777;
+    expect(mode).toBe(0o600);
+  });
 });

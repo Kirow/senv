@@ -1,13 +1,13 @@
 import { Command } from "commander";
 import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
-import { isValidIdentityName } from "../utils";
+import { isValidIdentityName, getCommandOptions } from "../utils";
 
 export const identityAddCmd = new Command("add")
   .argument("<ID_NAME>", "Name of the identity")
   .description("Generates a keypair and registers a new identity")
   .action(async (idName, options, command) => {
-    const keystorePath = command.optsWithGlobals().keystore;
+    const { keystorePath } = getCommandOptions(command);
     try {
       if (!isValidIdentityName(idName)) {
         console.error(`Invalid identity name '${idName}'. Use letters, digits, '.', '_' or '-' only.`);
@@ -24,6 +24,9 @@ export const identityAddCmd = new Command("add")
       const keypair = senvCrypto.generateRSAKeyPair();
 
       const projectKeystore = await store.getProjectKeystore(keystorePath);
+      if (projectKeystore[idName]) {
+        process.stderr.write(`Identity '${idName}' already exists in local keystore; overwriting with new keypair.\n`);
+      }
       projectKeystore[idName] = keypair;
       await store.writeProjectKeystore(projectKeystore, keystorePath);
 

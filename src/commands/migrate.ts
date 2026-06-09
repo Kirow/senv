@@ -4,8 +4,7 @@ import { parseEnv } from "node:util";
 import * as senvCrypto from "../core/crypto";
 import * as store from "../core/store";
 import { isValidEnvName, isValidIdentityName, getCommandOptions } from "./utils";
-
-const MAX_VALUE_BYTES = 16 * 1024;
+import { MAX_VALUE_BYTES } from "./key/add";
 
 export const migrateCmd = new Command("migrate")
   .argument("<ID_NAME>", "Name of the identity")

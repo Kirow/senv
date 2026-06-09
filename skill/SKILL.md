@@ -88,6 +88,17 @@ eval $(senv use)
 eval $(senv use -e prod)
 ```
 
+`use` may emit conflict warnings on stderr when the same key is defined in multiple identities. These are non-fatal; the first identity's value is used. To resolve, pass `-i <identity>` to `key get` / `key list`.
+
+### Import from a .env file
+
+```bash
+senv migrate <identity> .env
+senv migrate <identity> .env -e prod
+```
+
+Imports only missing keys for the target environment. Skips keys that already exist in the identity's payload. Invalid env var names and values over 16 KB are skipped with a warning on stderr.
+
 ### Share access with a teammate
 
 ```bash
@@ -123,6 +134,14 @@ Output `export KEY=value` lines for `eval $(senv use)`. Aggregates across all de
 ### `senv merge [FILE_A] [FILE_B]`
 
 Merge conflicting or separate `.senv.json` files. Default `FILE_A` is `.senv.json` at git root or project dir.
+
+### `senv migrate <ID_NAME> <ENV_FILE>`
+
+Import missing keys from a `.env` file into an identity's payload for the target env. Skips keys that already exist and invalid/oversized values.
+
+### `senv update`
+
+Check for a newer senv release and install it via the install script.
 
 ### `senv identity list`
 

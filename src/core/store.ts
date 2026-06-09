@@ -1,4 +1,4 @@
-import { mkdir, open, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
 
@@ -51,15 +51,33 @@ export function validateKeystoreVersion(parsed: any): Keystore {
   return parsed as Keystore;
 }
 
+export function validateProjectConfigVersion(parsed: any): SenvProjectConfig {
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    typeof parsed.version !== "string" ||
+    parsed.version !== CURRENT_PROJECT_CONFIG_VERSION
+  ) {
+    const got = parsed && typeof parsed === "object" && typeof parsed.version === "string"
+      ? parsed.version
+      : "<missing>";
+    throw new Error(`Unsupported .senv.json version. Expected '${CURRENT_PROJECT_CONFIG_VERSION}'. Got '${got}'.`);
+  }
+  return parsed as SenvProjectConfig;
+}
+
 export async function atomicWriteFile(filePath: string, data: string, mode: number): Promise<void> {
   const tmpPath = filePath + ".tmp";
   const fh = await open(tmpPath, "w", mode);
   try {
     await fh.writeFile(data, "utf-8");
     await fh.sync();
-  } finally {
+  } catch (e) {
     await fh.close();
+    try { await unlink(tmpPath); } catch {}
+    throw e;
   }
+  await fh.close();
   await rename(tmpPath, filePath);
 }
 
@@ -128,10 +146,19 @@ export async function readProjectConfig(): Promise<SenvProjectConfig> {
   try {
     const p = getProjectConfigPath();
     const content = await readFile(p, "utf-8");
-    return JSON.parse(content) as SenvProjectConfig;
+    let parsed: any;
+    try {
+      parsed = JSON.parse(content);
+    } catch (parseErr: any) {
+      throw new Error(`Failed to parse .senv.json JSON: ${parseErr.message}`);
+    }
+    return validateProjectConfigVersion(parsed);
   } catch (err: any) {
     if (err.code === "ENOENT") {
       throw new Error(".senv.json not found in the current directory.");
+    }
+    if (err.message.includes("Unsupported .senv.json version") || err.message.includes("Failed to parse .senv.json JSON")) {
+      throw err;
     }
     throw new Error(`Failed to read .senv.json: ${err.message}`);
   }

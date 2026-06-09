@@ -31,13 +31,14 @@ export function mergeProjectConfigs(
   projectKeystore: KeystoreProjectStore,
   sourceLabel: string,
   theirsLabel?: string
-): SenvProjectConfig {
+): { config: SenvProjectConfig; messages: string[] } {
   const merged = { ...configA, identities: { ...configA.identities } };
+  const messages: string[] = [];
 
   for (const [idName, encryptedB] of Object.entries(configB.identities)) {
     if (!merged.identities[idName]) {
       merged.identities[idName] = encryptedB;
-      console.log(`Identity '${idName}' added from ${sourceLabel}.`);
+      messages.push(`Identity '${idName}' added from ${sourceLabel}.`);
     } else if (merged.identities[idName] !== encryptedB) {
       if (projectKeystore[idName] && projectKeystore[idName].privateKey) {
         const payloadA = senvCrypto.decryptPayload(merged.identities[idName], projectKeystore[idName].privateKey);
@@ -50,7 +51,7 @@ export function mergeProjectConfigs(
 
         const mergedPayload = Array.from(mapA.values());
         merged.identities[idName] = senvCrypto.encryptPayload(mergedPayload, projectKeystore[idName].publicKey);
-        console.log(`Merged payloads for identity '${idName}'.`);
+        messages.push(`Merged payloads for identity '${idName}'.`);
       } else {
         const encryptedOurs = merged.identities[idName];
         const picked = conflict.pickConflictBlobWithoutPrivateKey(
@@ -61,15 +62,15 @@ export function mergeProjectConfigs(
         );
         merged.identities[idName] = picked;
         if (picked === encryptedB) {
-          console.log(`Identity '${idName}' kept incoming version (no private key).`);
+          messages.push(`Identity '${idName}' kept incoming version (no private key).`);
         } else {
-          console.log(`Identity '${idName}' kept ours version (no private key).`);
+          messages.push(`Identity '${idName}' kept ours version (no private key).`);
         }
       }
     }
   }
 
-  return merged;
+  return { config: merged, messages };
 }
 
 async function writeMergedConfig(filePath: string, config: SenvProjectConfig): Promise<void> {
@@ -107,10 +108,10 @@ export const mergeCmd = new Command("merge")
       } else {
         console.error("Merge failed: no git conflict markers in file and FILE_B was not provided.");
         process.exit(1);
-        return;
       }
 
-      const merged = mergeProjectConfigs(configA, configB, projectKeystore, sourceLabel, theirsLabel);
+      const { config: merged, messages } = mergeProjectConfigs(configA, configB, projectKeystore, sourceLabel, theirsLabel);
+      for (const msg of messages) console.log(msg);
       await writeMergedConfig(targetPath, merged);
       console.log(`Merge complete. Merged into ${targetPath}.`);
     } catch (e: any) {

@@ -1,7 +1,14 @@
 import { GITHUB_REPO } from "../version";
 
 function normalizeVersion(version: string): number[] {
-  return version.replace(/^v/, "").split(".").map(part => Number(part));
+  return version
+    .replace(/^v/, "")
+    .replace(/-.*$/, "")
+    .split(".")
+    .map(part => {
+      const n = Number(part);
+      return Number.isNaN(n) ? 0 : n;
+    });
 }
 
 export function compareSemver(a: string, b: string): number {
@@ -17,7 +24,9 @@ export function compareSemver(a: string, b: string): number {
 }
 
 export async function fetchLatestVersion(): Promise<string> {
-  const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`);
+  const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+    signal: AbortSignal.timeout(10000),
+  });
   if (!res.ok) {
     throw new Error(`GitHub API returned ${res.status}`);
   }

@@ -3,7 +3,7 @@ import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
 import { isValidEnvName, isValidIdentityName, getCommandOptions } from "../utils";
 
-const MAX_VALUE_BYTES = 16 * 1024;
+export const MAX_VALUE_BYTES = 16 * 1024;
 
 export const keyAddCmd = new Command("add")
   .argument("<ID_NAME>", "Name of the identity")

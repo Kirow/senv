@@ -17,6 +17,15 @@ describe("compareSemver", () => {
   it("strips v prefix before comparing", () => {
     expect(compareSemver("v0.1.0", "0.1.0")).toBe(0);
   });
+
+  it("strips pre-release suffixes and treats as equal to base", () => {
+    expect(compareSemver("1.0.0-alpha", "1.0.0")).toBe(0);
+  });
+
+  it("compares versions with different segment counts", () => {
+    expect(compareSemver("1.0", "1.0.0")).toBe(0);
+    expect(compareSemver("1.0.1", "1.0")).toBe(1);
+  });
 });
 
 describe("fetchLatestVersion", () => {

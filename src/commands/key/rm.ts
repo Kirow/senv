@@ -19,8 +19,18 @@ export const keyRmCmd = new Command("rm")
       const config = await store.readProjectConfig();
       const projectKeystore = await store.getProjectKeystore(keystorePath);
 
-      if (!config.identities[idName] || !projectKeystore[idName] || !projectKeystore[idName].privateKey) {
-        console.error(`Cannot remove from '${idName}': missing identity or private key.`);
+      if (!config.identities[idName]) {
+        console.error(`Identity '${idName}' is missing from .senv.json.`);
+        process.exit(1);
+      }
+
+      if (!projectKeystore[idName]) {
+        console.error(`Identity '${idName}' has no entry in local keystore.`);
+        process.exit(1);
+      }
+
+      if (!projectKeystore[idName].privateKey) {
+        console.error(`Identity '${idName}' is missing private key in local keystore.`);
         process.exit(1);
       }
 

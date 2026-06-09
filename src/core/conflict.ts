@@ -9,6 +9,14 @@ function extractVersion(prefix: string): string {
   return match ? match[1]! : CURRENT_PROJECT_CONFIG_VERSION;
 }
 
+function validateSenvConfigVersion(version: string): void {
+  if (version !== CURRENT_PROJECT_CONFIG_VERSION) {
+    throw new Error(
+      `Unsupported .senv.json version in conflict. Expected '${CURRENT_PROJECT_CONFIG_VERSION}'. Got '${version}'.`
+    );
+  }
+}
+
 function wrapIdentitiesFragment(fragment: string, version: string): SenvProjectConfig {
   const trimmed = fragment.trim().replace(/,\s*$/, "");
   const wrapped = `{"version":"${version}","identities":{${trimmed}}}`;
@@ -29,6 +37,7 @@ export function parseGitConflictSenv(content: string): {
   const firstPrefixMatch = content.match(/^([\s\S]*?)<<<<<<</m);
   const prefix = firstPrefixMatch ? firstPrefixMatch[1]! : "";
   const version = extractVersion(prefix);
+  validateSenvConfigVersion(version);
 
   let oursMerged: SenvProjectConfig = wrapIdentitiesFragment("", version);
   let theirsMerged: SenvProjectConfig = wrapIdentitiesFragment("", version);

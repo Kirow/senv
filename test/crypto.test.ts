@@ -145,4 +145,42 @@ describe("crypto operations", () => {
     const forged = "-----BEGIN PRIVATE KEY-----\nNOT_A_REAL_KEY\n-----END PRIVATE KEY-----\n";
     expect(crypto.isValidPEM(forged, "private")).toBe(false);
   });
+
+  it("detects tampering with encryptedDEK field", () => {
+    const { publicKey, privateKey } = crypto.generateRSAKeyPair();
+    const payload: SenvPayload = [{ key: "A", value: "B", environment: "dev" }];
+    const encrypted = crypto.encryptPayload(payload, publicKey);
+
+    const json = JSON.parse(Buffer.from(encrypted, "base64").toString("utf8"));
+    json.encryptedDEK = "A" + json.encryptedDEK.slice(1);
+    const tamperedEncrypted = Buffer.from(JSON.stringify(json)).toString("base64");
+
+    expect(() => {
+      crypto.decryptPayload(tamperedEncrypted, privateKey);
+    }).toThrow();
+  });
+
+  it("detects tampering with IV field", () => {
+    const { publicKey, privateKey } = crypto.generateRSAKeyPair();
+    const payload: SenvPayload = [{ key: "A", value: "B", environment: "dev" }];
+    const encrypted = crypto.encryptPayload(payload, publicKey);
+
+    const json = JSON.parse(Buffer.from(encrypted, "base64").toString("utf8"));
+    json.iv = "A" + json.iv.slice(1);
+    const tamperedEncrypted = Buffer.from(JSON.stringify(json)).toString("base64");
+
+    expect(() => {
+      crypto.decryptPayload(tamperedEncrypted, privateKey);
+    }).toThrow();
+  });
+
+  it("fails to decrypt when a public key is passed as private key", () => {
+    const { publicKey, privateKey } = crypto.generateRSAKeyPair();
+    const payload: SenvPayload = [{ key: "A", value: "B", environment: "dev" }];
+    const encrypted = crypto.encryptPayload(payload, publicKey);
+
+    expect(() => {
+      crypto.decryptPayload(encrypted, publicKey);
+    }).toThrow();
+  });
 });

@@ -4,7 +4,7 @@
 
 `senv` is a secure, decentralized environment variables manager built for the terminal. By utilizing a hybrid RSA/AES-GCM encryption architecture, `senv` allows teams to safely store encrypted environment configurations inside source control (`.senv.json`), while maintaining unique local identities to restrict decryption access.
 
-> **Disclaimer:** This project and its underlying code (including the cryptography logic) were fully AI-generated using Google Gemini 3.1 Pro, OpenAI Codex 5.3, and MiniMax M3. While standard cryptography algorithms and practices were used, the codebase has not been audited by a human security professional. Use at your own risk.
+> **Disclaimer:** This project and its underlying code (including the cryptography logic) were fully AI-generated. While standard cryptography algorithms and practices were used, the codebase has not been audited by a human security professional. Use at your own risk.
 
 ## How it Works
 Instead of maintaining `.env` files that cannot be safely committed, `senv` encrypts your environment payloads inside `.senv.json`. 
@@ -137,3 +137,11 @@ To run the automated test suite covering filesystem operations, cryptography, an
 ```bash
 bun test
 ```
+
+## AI Models Used
+
+- Google Gemini 3.1 Pro
+- OpenAI Codex 5.3
+- MiniMax M3
+- Composer 2.5
+- DeepSeek V4 Pro

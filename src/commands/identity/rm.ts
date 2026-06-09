@@ -1,13 +1,14 @@
 import { Command } from "commander";
 import * as store from "../../core/store";
 import * as readline from "node:readline/promises";
+import { getCommandOptions } from "../utils";
 
 export const identityRmCmd = new Command("rm")
   .argument("<ID_NAME>", "Name of the identity to remove")
   .option("-y, --yes", "Skip confirmation prompt")
   .description("Removes an identity from .senv.json")
   .action(async (idName, options, command) => {
-    const keystorePath = command.optsWithGlobals().keystore;
+    const { keystorePath } = getCommandOptions(command);
     try {
       const config = await store.readProjectConfig();
       if (!config.identities[idName]) {
@@ -27,7 +28,7 @@ export const identityRmCmd = new Command("rm")
         const answer = await rl.question(`Are you sure you want to completely remove the identity '${idName}' and all of its secrets? (y/N): `);
         rl.close();
         if (answer.trim().toLowerCase() !== "y") {
-          console.log("Aborted.");
+          process.stderr.write("Aborted.\n");
           return;
         }
       }

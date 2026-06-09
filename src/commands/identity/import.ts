@@ -1,8 +1,7 @@
 import { Command } from "commander";
 import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
-import { getCommandOptions } from "../utils";
-import * as readline from "node:readline/promises";
+import { getCommandOptions, isValidIdentityName } from "../utils";
 
 export const identityImportCmd = new Command("import")
   .argument("<BASE64_STRING>", "Base64 encoded keypair")
@@ -13,6 +12,10 @@ export const identityImportCmd = new Command("import")
 
     try {
       const decoded = senvCrypto.decodeKeyPairBase64(b64String);
+
+      if (!isValidIdentityName(decoded.idName)) {
+        throw new Error(`Invalid identity name '${decoded.idName}' in imported bundle. Use letters, digits, '.', '_' or '-' only.`);
+      }
 
       if (decoded.publicKey && !senvCrypto.isValidPEM(decoded.publicKey, "public")) {
         throw new Error("Imported public key is not a valid PEM-formatted RSA public key.");
