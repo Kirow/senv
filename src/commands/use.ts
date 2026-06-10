@@ -7,10 +7,15 @@ import {
   warnMissingPresetKeys,
 } from "./utils";
 
+/**
+ * Shell-escapes a secret value using ANSI-C quoting (`$'...'`).
+ *
+ * Backslash is escaped first so later control-char inserts are not double-escaped.
+ *
+ * @param value - Raw secret string.
+ * @returns Shell-safe quoted string for `export KEY=...`.
+ */
 function shellEscapeAnsiC(value: string): string {
-  // ANSI-C quoting ($'...'): escape backslash and single quote, then translate
-  // raw control chars to their shell-escape forms. Order matters — backslash MUST
-  // be escaped first so subsequent inserts of "\n" etc. are not re-escaped.
   const escaped = value
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'")
@@ -20,6 +25,14 @@ function shellEscapeAnsiC(value: string): string {
   return `$'${escaped}'`;
 }
 
+/**
+ * Appends a shell `export` line for `key`, warning when multiple identities define it.
+ *
+ * @param key - Environment variable name.
+ * @param data - Decrypted value and contributing identities.
+ * @param lines - Output buffer mutated in place.
+ * @throws When `key` is not a valid env var name.
+ */
 function exportKey(
   key: string,
   data: { value: string; identityName: string; identities: string[] },

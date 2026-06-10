@@ -21,6 +21,7 @@ describe("CLI operations", () => {
     await fs.rm(tempProjectDir, { recursive: true, force: true });
   });
 
+  /** Spawns the CLI with isolated temp config/project dirs and `USER=testuser`. */
   async function runCLI(...args: string[]) {
     return await $`bun run ./src/index.ts ${args}`
       .env({
@@ -33,6 +34,7 @@ describe("CLI operations", () => {
       .quiet();
   }
 
+  /** Like {@link runCLI} but passes `--keystore` and a custom `USER` value. */
   async function runCLIWithKeystore(user: string, keystorePath: string, ...args: string[]) {
     return await $`bun run ./src/index.ts ${[...args, "--keystore", keystorePath]}`
       .env({
@@ -45,6 +47,7 @@ describe("CLI operations", () => {
       .quiet();
   }
 
+  /** Spawns the CLI from `cwd` without setting `SENV_PROJECT_DIR` (for git-root resolution tests). */
   async function runCLIFromDir(cwd: string, ...args: string[]) {
     const indexTs = path.join(import.meta.dir, "..", "src", "index.ts");
     return await $`bun run ${indexTs} ${args}`
@@ -58,6 +61,7 @@ describe("CLI operations", () => {
       .quiet();
   }
 
+  /** Spawns the CLI with stdin closed (non-TTY) for prompt-abort tests. */
   async function runCLINoStdin(...args: string[]) {
     const proc = spawn({
       cmd: ["bun", "run", "./src/index.ts", ...args],

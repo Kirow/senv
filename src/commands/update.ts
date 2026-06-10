@@ -3,6 +3,11 @@ import { execSync } from "node:child_process";
 import { compareSemver, fetchLatestVersion } from "../core/release";
 import { VERSION, INSTALL_SCRIPT_URL } from "../version";
 
+/**
+ * Checks GitHub for a newer release and runs the install script when an update is available.
+ *
+ * Exits with code 1 when the version check fails. Delegates install failure exit codes to `execSync`.
+ */
 export async function runUpdate(): Promise<void> {
   let latest: string;
   try {

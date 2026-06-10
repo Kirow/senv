@@ -75,7 +75,7 @@ skill/
 - **Version string:** `VERSION` lives in `src/version.ts`. `index.ts` uses it for `program.version(...)`. The Makefile's install collision check is version-agnostic (greps for the CLI name `Secure ENV (senv)`).
 - **Conflict resolution:** `core/conflict.ts` exports `parseGitConflictSenv` (handles multiple blocks via `matchAll`) and `pickConflictBlobWithoutPrivateKey` (owner-matching fallback).
 - **Buffer `use` output:** `use.ts` builds the full output as a string array and writes once at the end, so `eval $(senv use)` doesn't partially evaluate on error.
-- **Comments:** Add brief comments for non-obvious business logic, security caveats, and resolution order (e.g. `resolveProjectDir`, `atomicWriteFile` limitations). Do not narrate obvious code. No emojis.
+- **Comments (TSDoc):** Every `function` declaration, exported type/interface, and named helper must have a `/** ... */` block immediately above it. Structure: one-line summary, optional detail paragraph (why, caveats, resolution order), then `@param`, `@returns`, `@throws`, and `@example` when they add clarity. All exported `core/` APIs and shared `commands/utils.ts` helpers are public API — document parameters and return values fully. Use `@template` for generic type parameters. Use inline `//` only for brief notes inside function bodies. Do not TSDoc Commander `.action()` callbacks unless extracted into a named function. Do not narrate obvious code. No emojis.
 - **Bun-specific:** Use `bun:test` imports, `bun $` for shellouts in tests, `process.stderr` for warnings, `process.stdout` only for actual command output. `console.log` in import is acceptable since it goes to stdout.
 
 ## Common commands
@@ -123,6 +123,7 @@ These are read in `core/store.ts` (`getKeystorePath`, `resolveProjectDir`, `getP
 - For long-running tests (the two-user merge test spawns many subprocesses), pass a timeout as the 3rd arg: `it("name", async () => { ... }, 30000)`.
 - Gotcha: `readline.createInterface({ input: process.stdin, output: process.stdout }).question(...)` **hangs silently** when stdin is not a TTY (no error, no return). Always check `process.stdin.isTTY` first and short-circuit (e.g. print "Aborted." and `return`) when running in a non-interactive context. This applies to `identity rm` and `identity import` overwrite prompts.
 - Git-dependent tests use `requireGitRepo()` from `test/helpers/git.ts`; it `expect`s `git init` to succeed instead of silently returning when git is unavailable.
+- Reusable test helpers (`test/helpers/`, `runCLI` in `cli.test.ts`, etc.) follow the same TSDoc convention as production code.
 
 ## Adding a new command
 

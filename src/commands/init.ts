@@ -82,6 +82,12 @@ export const initCmd = new Command("init")
     console.log(`Initialized successfully. Identity '${idName}' added.`);
   });
 
+/**
+ * Warns when the same `environment:key` pair is defined in more than one locally decryptable identity.
+ *
+ * @param config - Project config with encrypted identity blobs.
+ * @param projectKeystore - Local keystore used to decrypt payloads for comparison.
+ */
 function reportDuplicateKeys(
   config: store.SenvProjectConfig,
   projectKeystore: store.KeystoreProjectStore

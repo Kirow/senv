@@ -4,6 +4,7 @@ import type { SenvPayload } from "../src/core/store";
 
 const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
+/** Replaces the first Base64 character with a different valid character (corrupts ciphertext for tests). */
 function flipFirstBase64Char(s: string): string {
   if (s.length === 0) return s;
   const first = s[0]!;

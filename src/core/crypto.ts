@@ -1,6 +1,11 @@
 import * as crypto from "node:crypto";
 import type { SenvPayload } from "./store";
 
+/**
+ * Generates a new RSA-2048 keypair for a senv identity.
+ *
+ * @returns PEM-encoded public (SPKI) and private (PKCS#8) keys.
+ */
 export function generateRSAKeyPair(): { publicKey: string; privateKey: string } {
   const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
     modulusLength: 2048,
@@ -23,6 +28,15 @@ interface PackedEncryptedPayload {
   encryptedPayload: string;
 }
 
+/**
+ * Encrypts a key-value payload for storage in `.senv.json`.
+ *
+ * Uses AES-256-GCM for the payload and RSA-OAEP (SHA-256) to wrap the DEK.
+ *
+ * @param payload - Decrypted key-value items to encrypt.
+ * @param publicKey - PEM-encoded RSA public key of the target identity.
+ * @returns Base64-encoded JSON blob (ciphertext, IV, auth tag, encrypted DEK).
+ */
 export function encryptPayload(payload: SenvPayload, publicKey: string): string {
   const dek = crypto.randomBytes(32);
   const iv = crypto.randomBytes(12);
@@ -53,6 +67,14 @@ export function encryptPayload(payload: SenvPayload, publicKey: string): string 
   return Buffer.from(JSON.stringify(packed), "utf8").toString("base64");
 }
 
+/**
+ * Decrypts a payload blob produced by {@link encryptPayload}.
+ *
+ * @param encryptedString - Base64 blob from `.senv.json`.
+ * @param privateKey - PEM-encoded RSA private key for the identity.
+ * @returns Decrypted key-value payload.
+ * @throws When the blob is malformed, GCM authentication fails, or RSA decryption fails.
+ */
 export function decryptPayload(encryptedString: string, privateKey: string): SenvPayload {
   const packedJson = Buffer.from(encryptedString, "base64").toString("utf8");
   const packed: PackedEncryptedPayload = JSON.parse(packedJson);
@@ -75,6 +97,16 @@ export function decryptPayload(encryptedString: string, privateKey: string): Sen
   return JSON.parse(decrypted) as SenvPayload;
 }
 
+/**
+ * Validates that a string is a parseable PEM-encoded RSA key.
+ *
+ * Uses `createPublicKey` / `createPrivateKey` rather than header string matching,
+ * which is forgeable.
+ *
+ * @param key - Candidate PEM string.
+ * @param type - Whether to validate as a public or private key.
+ * @returns `true` when the key parses successfully.
+ */
 export function isValidPEM(key: string, type: "public" | "private"): boolean {
   if (typeof key !== "string" || key.length === 0) {
     return false;
@@ -91,11 +123,26 @@ export function isValidPEM(key: string, type: "public" | "private"): boolean {
   }
 }
 
+/**
+ * Encodes an identity name and keypair as a single Base64 string for `identity export`.
+ *
+ * @param idName - Identity name embedded in the bundle.
+ * @param publicKey - PEM public key (may be empty for decrypt-only export).
+ * @param privateKey - PEM private key (may be empty when exporting public key only).
+ * @returns Base64 string suitable for `identity import`.
+ */
 export function encodeKeyPairBase64(idName: string, publicKey: string, privateKey: string): string {
   const data = JSON.stringify({ idName, publicKey, privateKey });
   return Buffer.from(data, "utf8").toString("base64");
 }
 
+/**
+ * Decodes a Base64 keypair string from {@link encodeKeyPairBase64}.
+ *
+ * @param b64 - Base64 bundle from `identity export`.
+ * @returns Parsed identity name and key material (either key may be empty).
+ * @throws When the blob is invalid JSON or contains neither a public nor private key.
+ */
 export function decodeKeyPairBase64(b64: string): { idName: string; publicKey: string; privateKey: string } {
   const data = Buffer.from(b64, "base64").toString("utf8");
   const parsed = JSON.parse(data);

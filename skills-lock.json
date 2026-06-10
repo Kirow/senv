@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "tsdoc-comments": {
+      "source": "marius-townhouse/effective-typescript-skills",
+      "sourceType": "github",
+      "skillPath": "skills/tsdoc-comments/SKILL.md",
+      "computedHash": "f68df8fcde59d498eb543ec88467ebb6f81b2ed38a920cc3723ae5e293baaeb4"
+    }
+  }
+}

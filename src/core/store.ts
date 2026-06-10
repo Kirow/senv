@@ -3,15 +3,18 @@ import * as path from "node:path";
 import * as os from "node:os";
 import { getGitRoot } from "./git";
 
+/** RSA keypair for a single identity in the local keystore. */
 export interface Identity {
   publicKey: string;
   privateKey: string;
 }
 
+/** Map of identity names to keypairs for one project directory. */
 export interface KeystoreProjectStore {
   [identityName: string]: Identity;
 }
 
+/** On-disk `identity.json` schema: versioned, keyed by absolute project directory. */
 export interface Keystore {
   version: string;
   projects: {
@@ -19,6 +22,7 @@ export interface Keystore {
   };
 }
 
+/** On-disk `.senv.json` schema: encrypted identity blobs and optional named presets. */
 export interface SenvProjectConfig {
   version: string;
   identities: {
@@ -29,17 +33,29 @@ export interface SenvProjectConfig {
   };
 }
 
+/** One decrypted environment variable inside an identity payload. */
 export interface SenvPayloadItem {
   key: string;
   value: string;
   environment: string;
 }
 
+/** Decrypted payload for one identity: a list of env-scoped key-value pairs. */
 export type SenvPayload = SenvPayloadItem[];
 
+/** Supported `identity.json` schema version. Bump with a migration path in {@link validateKeystoreVersion}. */
 export const CURRENT_KEYSTORE_VERSION = "1.0";
+
+/** Supported `.senv.json` schema version. Bump with a migration path in {@link validateProjectConfigVersion}. */
 export const CURRENT_PROJECT_CONFIG_VERSION = "1.0";
 
+/**
+ * Validates that parsed JSON matches the supported keystore schema version.
+ *
+ * @param parsed - Raw JSON value from `identity.json`.
+ * @returns Typed {@link Keystore} when the version matches {@link CURRENT_KEYSTORE_VERSION}.
+ * @throws When the version field is missing or unsupported.
+ */
 export function validateKeystoreVersion(parsed: any): Keystore {
   if (
     !parsed ||
@@ -55,6 +71,13 @@ export function validateKeystoreVersion(parsed: any): Keystore {
   return parsed as Keystore;
 }
 
+/**
+ * Validates that parsed JSON matches the supported `.senv.json` schema version.
+ *
+ * @param parsed - Raw JSON value from `.senv.json`.
+ * @returns Typed {@link SenvProjectConfig} when the version matches {@link CURRENT_PROJECT_CONFIG_VERSION}.
+ * @throws When the version field is missing or unsupported.
+ */
 export function validateProjectConfigVersion(parsed: any): SenvProjectConfig {
   if (
     !parsed ||
@@ -70,10 +93,16 @@ export function validateProjectConfigVersion(parsed: any): SenvProjectConfig {
   return parsed as SenvProjectConfig;
 }
 
+/**
+ * Writes `data` to `filePath` atomically via a temp file, fsync, and rename.
+ *
+ * Single-process atomicity only; concurrent writers can clobber each other (see AGENTS.md).
+ *
+ * @param filePath - Destination path (overwritten on success).
+ * @param data - UTF-8 string content to write.
+ * @param mode - Unix file mode (e.g. `0o600` for secrets).
+ */
 export async function atomicWriteFile(filePath: string, data: string, mode: number): Promise<void> {
-  // Single-process atomicity only: open tmp with explicit mode → fsync → rename.
-  // No cross-process file lock; concurrent writers can clobber each other.
-  // See AGENTS.md "Security model caveats" — this limitation is intentionally accepted.
   const tmpPath = filePath + ".tmp";
   const fh = await open(tmpPath, "w", mode);
   try {
@@ -88,11 +117,12 @@ export async function atomicWriteFile(filePath: string, data: string, mode: numb
   await rename(tmpPath, filePath);
 }
 
+/** Creates `dir` with mode `0700` when it does not exist; does not tighten permissions on existing dirs. */
 async function mkdirSecure(dir: string): Promise<void> {
-  // Mode applies only on creation; an existing dir with looser perms is NOT tightened.
   await mkdir(dir, { recursive: true, mode: 0o700 });
 }
 
+/** @param filePath - Path to test for accessibility. @returns `true` when the path exists and is readable. */
 async function pathExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath);
@@ -102,6 +132,10 @@ async function pathExists(filePath: string): Promise<boolean> {
   }
 }
 
+/**
+ * @param dir - Directory path to normalize.
+ * @returns Canonical path via `realpath`, or `path.resolve` when the path does not exist yet.
+ */
 async function normalizePath(dir: string): Promise<string> {
   try {
     return await realpath(dir);
@@ -110,12 +144,15 @@ async function normalizePath(dir: string): Promise<string> {
   }
 }
 
+/**
+ * Resolves the project directory used for `.senv.json` and project-scoped keystore entries.
+ *
+ * Resolution order: `SENV_PROJECT_DIR` → cwd (when config exists there) → git root
+ * (when cwd has no config but root does) → cwd.
+ *
+ * @returns Absolute, normalized project directory path.
+ */
 export async function resolveProjectDir(): Promise<string> {
-  // Resolution order (see README "Project directory resolution"):
-  // 1. SENV_PROJECT_DIR when set
-  // 2. cwd when .senv.json exists there (wins over git root — supports per-package configs)
-  // 3. git repository root when cwd has no config but root does
-  // 4. cwd otherwise
   let dir: string;
   if (process.env.SENV_PROJECT_DIR) {
     dir = process.env.SENV_PROJECT_DIR;
@@ -141,6 +178,7 @@ export async function resolveProjectDir(): Promise<string> {
   return normalizePath(dir);
 }
 
+/** @returns User-facing message listing where `.senv.json` was searched. */
 async function formatProjectConfigNotFoundError(): Promise<string> {
   if (process.env.SENV_PROJECT_DIR) {
     const dir = await normalizePath(process.env.SENV_PROJECT_DIR);
@@ -158,6 +196,11 @@ async function formatProjectConfigNotFoundError(): Promise<string> {
   return `.senv.json not found in the current directory.`;
 }
 
+/**
+ * @param ks - Full keystore.
+ * @param projectDir - Resolved project directory to look up.
+ * @returns Project identity map, matching legacy keys that differ only by symlink normalization.
+ */
 async function findProjectKeystoreEntry(
   ks: Keystore,
   projectDir: string
@@ -165,7 +208,6 @@ async function findProjectKeystoreEntry(
   if (ks.projects[projectDir]) {
     return ks.projects[projectDir];
   }
-  // Match legacy keystore keys written before realpath normalization (symlinks, relative paths).
   const normalized = await normalizePath(projectDir);
   for (const [key, entry] of Object.entries(ks.projects)) {
     if (await normalizePath(key) === normalized) {
@@ -175,6 +217,12 @@ async function findProjectKeystoreEntry(
   return undefined;
 }
 
+/**
+ * Returns the keystore file path, creating parent directories as needed.
+ *
+ * @param customPath - When set, use this path instead of `SENV_CONFIG_DIR` / `~/.config/senv/identity.json`.
+ * @returns Absolute path to `identity.json`.
+ */
 export async function getKeystorePath(customPath?: string): Promise<string> {
   if (customPath) {
     const dir = path.dirname(customPath);
@@ -186,6 +234,13 @@ export async function getKeystorePath(customPath?: string): Promise<string> {
   return path.join(configDir, "identity.json");
 }
 
+/**
+ * Reads and validates the keystore.
+ *
+ * @param customPath - Optional override passed to {@link getKeystorePath}.
+ * @returns Parsed keystore, or an empty store when the file does not exist.
+ * @throws On JSON parse errors or unsupported versions.
+ */
 export async function readKeystore(customPath?: string): Promise<Keystore> {
   try {
     const p = await getKeystorePath(customPath);
@@ -205,16 +260,25 @@ export async function readKeystore(customPath?: string): Promise<Keystore> {
   }
 }
 
+/**
+ * @param customPath - Optional keystore path override.
+ * @returns Identity map for the current project, or `{}` when none is stored.
+ */
 export async function getProjectKeystore(customPath?: string): Promise<KeystoreProjectStore> {
   const ks = await readKeystore(customPath);
   const pd = await resolveProjectDir();
   return (await findProjectKeystoreEntry(ks, pd)) || {};
 }
 
+/**
+ * Persists the identity map for the current project, collapsing duplicate normalized project keys.
+ *
+ * @param pks - Identity name → keypair map for this project.
+ * @param customPath - Optional keystore path override.
+ */
 export async function writeProjectKeystore(pks: KeystoreProjectStore, customPath?: string): Promise<void> {
   const ks = await readKeystore(customPath);
   const pd = await resolveProjectDir();
-  // Collapse duplicate project keys that resolve to the same directory.
   for (const key of Object.keys(ks.projects)) {
     if (key !== pd && (await normalizePath(key)) === pd) {
       delete ks.projects[key];
@@ -224,16 +288,29 @@ export async function writeProjectKeystore(pks: KeystoreProjectStore, customPath
   await writeKeystore(ks, customPath);
 }
 
+/**
+ * Atomically writes the full keystore to disk with mode `0600`.
+ *
+ * @param keystore - Complete keystore object to persist.
+ * @param customPath - Optional keystore path override.
+ */
 export async function writeKeystore(keystore: Keystore, customPath?: string): Promise<void> {
   const p = await getKeystorePath(customPath);
   await atomicWriteFile(p, JSON.stringify(keystore, null, 2), 0o600);
 }
 
+/** @returns Absolute path to `.senv.json` in the directory from {@link resolveProjectDir}. */
 export async function getProjectConfigPath(): Promise<string> {
   const projDir = await resolveProjectDir();
   return path.join(projDir, ".senv.json");
 }
 
+/**
+ * Reads and validates `.senv.json` for the resolved project directory.
+ *
+ * @returns Parsed project config.
+ * @throws When the file is missing, malformed, or has an unsupported version.
+ */
 export async function readProjectConfig(): Promise<SenvProjectConfig> {
   const p = await getProjectConfigPath();
   try {
@@ -256,6 +333,11 @@ export async function readProjectConfig(): Promise<SenvProjectConfig> {
   }
 }
 
+/**
+ * Atomically writes `.senv.json` with mode `0600`.
+ *
+ * @param config - Project config to persist.
+ */
 export async function writeProjectConfig(config: SenvProjectConfig): Promise<void> {
   const p = await getProjectConfigPath();
   await atomicWriteFile(p, JSON.stringify(config, null, 2), 0o600);

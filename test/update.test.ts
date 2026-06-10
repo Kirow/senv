@@ -2,6 +2,7 @@ import { describe, expect, it, afterEach, spyOn } from "bun:test";
 import * as childProcess from "node:child_process";
 import { runUpdate } from "../src/commands/update";
 
+/** Replaces `globalThis.fetch` with a test double for the duration of a test. */
 function mockFetch(impl: () => Promise<Response>): typeof globalThis.fetch {
   return impl as unknown as typeof globalThis.fetch;
 }

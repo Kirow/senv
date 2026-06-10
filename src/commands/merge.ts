@@ -6,6 +6,13 @@ import * as conflict from "../core/conflict";
 import { getCommandOptions } from "./utils";
 import * as fs from "node:fs/promises";
 
+/**
+ * Union-merges two preset maps, deduplicating keys within each preset name.
+ *
+ * @param a - Base preset map (may be undefined).
+ * @param b - Incoming preset map to merge in (may be undefined).
+ * @returns Merged map, or `undefined` when both inputs are empty/absent.
+ */
 export function mergePresets(
   a?: Record<string, string[]>,
   b?: Record<string, string[]>
@@ -30,6 +37,14 @@ export function mergePresets(
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
+/**
+ * Extracts the `presets` object from the non-conflict prefix or postfix of a conflicted file.
+ *
+ * Git conflict markers split the `identities` block; `presets` often survive intact outside the markers.
+ *
+ * @param content - Full conflicted `.senv.json` contents.
+ * @returns Parsed presets object, or `undefined` when not found or invalid JSON.
+ */
 export function extractPresetsFromConflictedContent(content: string): Record<string, string[]> | undefined {
   const firstMarker = content.indexOf("<<<<<<<");
   const lastMarker = content.lastIndexOf(">>>>>>>");
@@ -48,6 +63,20 @@ export function extractPresetsFromConflictedContent(content: string): Record<str
   }
 }
 
+/**
+ * Merges two project configs at the identity and preset level.
+ *
+ * Decryptable identities are merged at the payload level; others use the owner-name heuristic
+ * via {@link conflict.pickConflictBlobWithoutPrivateKey}. Re-encrypted payloads use the local
+ * public key only — other recipients lose access (see AGENTS.md).
+ *
+ * @param configA - Ours / base config.
+ * @param configB - Theirs / incoming config.
+ * @param projectKeystore - Local keystore for decrypt/re-encrypt.
+ * @param sourceLabel - Human-readable label for log messages (e.g. `"incoming"` or a file path).
+ * @param theirsLabel - Git branch name from conflict markers, when applicable.
+ * @returns Merged config and human-readable merge summary lines.
+ */
 export function mergeProjectConfigs(
   configA: SenvProjectConfig,
   configB: SenvProjectConfig,
@@ -55,10 +84,6 @@ export function mergeProjectConfigs(
   sourceLabel: string,
   theirsLabel?: string
 ): { config: SenvProjectConfig; messages: string[] } {
-  // Identities we can decrypt are merged at the payload level. For identities where
-  // we have no private key, we fall back to owner-name heuristic (see conflict.ts).
-  // Re-encrypted payloads use OUR public key only — other recipients lose access.
-  // Documented limitation; see AGENTS.md.
   const merged: SenvProjectConfig = {
     ...configA,
     identities: { ...configA.identities },
@@ -104,6 +129,7 @@ export function mergeProjectConfigs(
   return { config: merged, messages };
 }
 
+/** Atomically writes a merged `.senv.json` to `filePath`. */
 async function writeMergedConfig(filePath: string, config: SenvProjectConfig): Promise<void> {
   await store.atomicWriteFile(filePath, JSON.stringify(config, null, 2), 0o600);
 }

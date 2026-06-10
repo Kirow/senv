@@ -1,6 +1,12 @@
 import { Command } from "commander";
 import { getAccessiblePayloads, getCommandOptions } from "../utils";
 
+/**
+ * Masks a secret value for terminal display.
+ *
+ * @param value - Plaintext secret.
+ * @returns `***` for short values, or `x***y` showing first and last character.
+ */
 function mask(value: string): string {
   if (value.length <= 8) return "***";
   return value.slice(0, 1) + "***" + value.slice(-1);

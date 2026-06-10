@@ -1,6 +1,7 @@
 import { describe, expect, it, afterEach } from "bun:test";
 import { compareSemver, fetchLatestVersion } from "../src/core/release";
 
+/** Replaces `globalThis.fetch` with a test double for the duration of a test. */
 function mockFetch(impl: () => Promise<Response>): typeof globalThis.fetch {
   return impl as unknown as typeof globalThis.fetch;
 }

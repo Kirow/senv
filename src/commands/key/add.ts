@@ -3,6 +3,7 @@ import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
 import { isValidEnvName, isValidIdentityName, getCommandOptions } from "../utils";
 
+/** Maximum UTF-8 byte length for a single secret value (`key add`, `migrate`). */
 export const MAX_VALUE_BYTES = 16 * 1024;
 
 export const keyAddCmd = new Command("add")

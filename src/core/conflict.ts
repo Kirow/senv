@@ -1,14 +1,20 @@
 import { type SenvProjectConfig, CURRENT_PROJECT_CONFIG_VERSION } from "./store";
 
+/**
+ * @param content - Raw `.senv.json` file contents.
+ * @returns `true` when git conflict start markers (`<<<<<<<`) are present.
+ */
 export function hasGitConflictMarkers(content: string): boolean {
   return content.includes("<<<<<<<");
 }
 
+/** @param prefix - JSON text before the first conflict marker. @returns Parsed `"version"` or {@link CURRENT_PROJECT_CONFIG_VERSION}. */
 function extractVersion(prefix: string): string {
   const match = prefix.match(/"version"\s*:\s*"([^"]+)"/);
   return match ? match[1]! : CURRENT_PROJECT_CONFIG_VERSION;
 }
 
+/** @param version - Version string from conflict prefix. @throws When it does not match {@link CURRENT_PROJECT_CONFIG_VERSION}. */
 function validateSenvConfigVersion(version: string): void {
   if (version !== CURRENT_PROJECT_CONFIG_VERSION) {
     throw new Error(
@@ -17,6 +23,10 @@ function validateSenvConfigVersion(version: string): void {
   }
 }
 
+/**
+ * @param fragment - Partial `identities` object body from a conflict block.
+ * @param version - Config version to embed in the wrapper object.
+ */
 function wrapIdentitiesFragment(fragment: string, version: string): SenvProjectConfig {
   const trimmed = fragment.trim().replace(/,\s*$/, "");
   const wrapped = `{"version":"${version}","identities":{${trimmed}}}`;
@@ -25,6 +35,16 @@ function wrapIdentitiesFragment(fragment: string, version: string): SenvProjectC
 
 const CONFLICT_BLOCK_RE = /<<<<<<<[^\n]*\n([\s\S]*?)^=======\n([\s\S]*?)^>>>>>>>[ \t]*([^\n]*)\n?/gm;
 
+/**
+ * Parses one or more git conflict blocks in a `.senv.json` file.
+ *
+ * Identity entries across blocks are unioned into separate `ours` and `theirs` configs.
+ * Used by `senv merge` when resolving conflict markers in place.
+ *
+ * @param content - Full conflicted file contents.
+ * @returns Merged ours/theirs configs and the git branch label from the last `>>>>>>>` marker.
+ * @throws When no conflict markers are found or a block cannot be parsed.
+ */
 export function parseGitConflictSenv(content: string): {
   ours: SenvProjectConfig;
   theirs: SenvProjectConfig;
@@ -73,11 +93,24 @@ export function parseGitConflictSenv(content: string): {
   };
 }
 
+/** @param idName - Identity name (e.g. `alice-local`). @returns Username portion before `-local`, or `null`. */
 function identityOwnerFromName(idName: string): string | null {
   const match = idName.match(/^(.+)-local$/);
   return match ? match[1]! : null;
 }
 
+/**
+ * Picks which encrypted identity blob to keep when the local user lacks a private key.
+ *
+ * Matches the git conflict branch label (`theirsLabel`) against the `<user>-local` owner
+ * heuristic so incoming changes from the other collaborator are preferred when appropriate.
+ *
+ * @param idName - Identity being merged.
+ * @param encryptedOurs - Ciphertext from the current/ours side.
+ * @param encryptedTheirs - Ciphertext from the incoming/theirs side.
+ * @param theirsLabel - Git branch name from the `>>>>>>>` marker (optional).
+ * @returns The chosen ciphertext blob.
+ */
 export function pickConflictBlobWithoutPrivateKey(
   idName: string,
   encryptedOurs: string,
