@@ -2,6 +2,16 @@ import { describe, expect, it } from "bun:test";
 import * as crypto from "../src/core/crypto";
 import type { SenvPayload } from "../src/core/store";
 
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+function flipFirstBase64Char(s: string): string {
+  if (s.length === 0) return s;
+  const first = s[0]!;
+  const idx = BASE64_ALPHABET.indexOf(first);
+  const replacement = idx === 0 ? BASE64_ALPHABET[1]! : BASE64_ALPHABET[0]!;
+  return replacement + s.slice(1);
+}
+
 describe("crypto operations", () => {
   it("generates an RSA key pair in PEM format", () => {
     const { publicKey, privateKey } = crypto.generateRSAKeyPair();
@@ -49,8 +59,7 @@ describe("crypto operations", () => {
     const encrypted = crypto.encryptPayload(payload, publicKey);
 
     const json = JSON.parse(Buffer.from(encrypted, "base64").toString("utf8"));
-    // Tamper with the encryptedPayload
-    json.encryptedPayload = "A" + json.encryptedPayload.slice(1);
+    json.encryptedPayload = flipFirstBase64Char(json.encryptedPayload);
     const tamperedEncrypted = Buffer.from(JSON.stringify(json)).toString("base64");
 
     expect(() => {
@@ -152,7 +161,7 @@ describe("crypto operations", () => {
     const encrypted = crypto.encryptPayload(payload, publicKey);
 
     const json = JSON.parse(Buffer.from(encrypted, "base64").toString("utf8"));
-    json.encryptedDEK = "A" + json.encryptedDEK.slice(1);
+    json.encryptedDEK = flipFirstBase64Char(json.encryptedDEK);
     const tamperedEncrypted = Buffer.from(JSON.stringify(json)).toString("base64");
 
     expect(() => {
@@ -166,7 +175,7 @@ describe("crypto operations", () => {
     const encrypted = crypto.encryptPayload(payload, publicKey);
 
     const json = JSON.parse(Buffer.from(encrypted, "base64").toString("utf8"));
-    json.iv = "A" + json.iv.slice(1);
+    json.iv = flipFirstBase64Char(json.iv);
     const tamperedEncrypted = Buffer.from(JSON.stringify(json)).toString("base64");
 
     expect(() => {

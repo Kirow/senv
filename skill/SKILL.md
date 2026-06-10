@@ -31,8 +31,18 @@ Terminal CLI for decentralized, encrypted env-var management. Payloads live in `
 ## Prerequisites
 
 1. `senv` available on PATH (bundled JS needs Bun at runtime; standalone binary does not)
-2. Run from the project root (or set `SENV_PROJECT_DIR`)
-3. If `.senv.json` is missing, run `senv init` first
+2. A project with `.senv.json` — run from the repo root, a subdirectory (senv walks up to the git root when cwd has no config), or set `SENV_PROJECT_DIR`
+3. If `.senv.json` is missing, run `senv init` first (typically at the git repository root)
+
+### Project directory resolution
+
+Unless `SENV_PROJECT_DIR` is set:
+
+1. **cwd** if `.senv.json` exists there
+2. **Git repository root** if cwd has no config but the root does
+3. **cwd** otherwise
+
+If both cwd and the git root have `.senv.json`, **cwd wins** (per-package configs in monorepos).
 
 Install this skill into a project: `senv install skill` → `.agents/skills/secure-env-tool/SKILL.md`
 
@@ -160,7 +170,7 @@ Output `export KEY=value` lines for `eval $(senv use)`. Without a preset, aggreg
 
 ### `senv merge [FILE_A] [FILE_B]`
 
-Merge conflicting or separate `.senv.json` files. Default `FILE_A` is `.senv.json` at git root or project dir.
+Merge conflicting or separate `.senv.json` files. Default `FILE_A` is `.senv.json` in the resolved project directory (cwd, git root, or `SENV_PROJECT_DIR`).
 
 ### `senv migrate <ID_NAME> <ENV_FILE>`
 
@@ -239,7 +249,7 @@ Install this skill file into `.agents/skills/secure-env-tool/SKILL.md` (create o
 | Variable | Purpose |
 |----------|---------|
 | `SENV_CONFIG_DIR` | Override keystore directory (default `~/.config/senv`) |
-| `SENV_PROJECT_DIR` | Override project root for `.senv.json` lookup |
+| `SENV_PROJECT_DIR` | Override project root; when unset, senv uses cwd or git root per resolution rules above |
 | `USER` / `USERNAME` | Used by `init` to derive default identity name |
 
 In scripts and CI, always pass `-y` to `identity import` and `identity rm` when stdin is not a TTY.

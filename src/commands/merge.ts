@@ -4,26 +4,7 @@ import * as store from "../core/store";
 import { type KeystoreProjectStore, type SenvProjectConfig } from "../core/store";
 import * as conflict from "../core/conflict";
 import { getCommandOptions } from "./utils";
-import { execSync } from "node:child_process";
 import * as fs from "node:fs/promises";
-import * as path from "node:path";
-
-function getGitRoot(startDir: string): string | null {
-  try {
-    return execSync("git rev-parse --show-toplevel", { cwd: startDir, encoding: "utf-8" }).trim();
-  } catch {
-    return null;
-  }
-}
-
-function resolveDefaultMergeFilePath(): string {
-  const projectDir = process.env.SENV_PROJECT_DIR || process.cwd();
-  const gitRoot = getGitRoot(projectDir);
-  if (gitRoot) {
-    return path.join(gitRoot, ".senv.json");
-  }
-  return store.getProjectConfigPath();
-}
 
 export function mergePresets(
   a?: Record<string, string[]>,
@@ -50,9 +31,15 @@ export function mergePresets(
 }
 
 export function extractPresetsFromConflictedContent(content: string): Record<string, string[]> | undefined {
-  const markerIdx = content.indexOf("<<<<<<<");
-  const prefix = markerIdx >= 0 ? content.slice(0, markerIdx) : content;
-  const match = prefix.match(/"presets"\s*:\s*(\{[\s\S]*?\})\s*,?/);
+  const firstMarker = content.indexOf("<<<<<<<");
+  const lastMarker = content.lastIndexOf(">>>>>>>");
+  const prefix = firstMarker >= 0 ? content.slice(0, firstMarker) : content;
+  const postfix = lastMarker >= 0
+    ? content.slice(content.indexOf("\n", lastMarker) + 1)
+    : "";
+
+  const presetsRegex = /"presets"\s*:\s*(\{[\s\S]*?\})\s*,?/;
+  const match = prefix.match(presetsRegex) ?? postfix.match(presetsRegex);
   if (!match) return undefined;
   try {
     return JSON.parse(match[1]!) as Record<string, string[]>;
@@ -68,6 +55,10 @@ export function mergeProjectConfigs(
   sourceLabel: string,
   theirsLabel?: string
 ): { config: SenvProjectConfig; messages: string[] } {
+  // Identities we can decrypt are merged at the payload level. For identities where
+  // we have no private key, we fall back to owner-name heuristic (see conflict.ts).
+  // Re-encrypted payloads use OUR public key only — other recipients lose access.
+  // Documented limitation; see AGENTS.md.
   const merged: SenvProjectConfig = {
     ...configA,
     identities: { ...configA.identities },
@@ -123,7 +114,7 @@ export const mergeCmd = new Command("merge")
   .description("Resolve git merge conflicts in .senv.json or merge FILE_B identities into FILE_A")
   .action(async (fileA, fileB, _options, command) => {
     const { keystorePath } = getCommandOptions(command);
-    const targetPath = fileA ?? resolveDefaultMergeFilePath();
+    const targetPath = fileA ?? await store.getProjectConfigPath();
 
     try {
       const contentA = await fs.readFile(targetPath, "utf-8");

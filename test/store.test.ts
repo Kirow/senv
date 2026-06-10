@@ -3,7 +3,7 @@ import * as store from "../src/core/store";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as os from "node:os";
-import { execSync } from "node:child_process";
+import { requireGitRepo } from "./helpers/git";
 
 describe("store operations", () => {
   let tempConfigDir: string;
@@ -129,7 +129,7 @@ describe("store operations", () => {
     await store.writeProjectKeystore(pks);
     expect(await store.getProjectKeystore()).toEqual(pks);
     const ks = await store.readKeystore();
-    expect(ks.projects[tempProjectDir]).toEqual(pks);
+    expect(ks.projects[await fs.realpath(tempProjectDir)]).toEqual(pks);
   });
 
   it("getProjectKeystore uses cwd when SENV_PROJECT_DIR is unset", async () => {
@@ -225,7 +225,7 @@ describe("store operations", () => {
   });
 
   it("readProjectConfig falls back to git root when .senv.json is missing in cwd", async () => {
-    execSync("git init -b main -q", { cwd: tempProjectDir, stdio: "ignore" });
+    await requireGitRepo(tempProjectDir);
 
     const config: store.SenvProjectConfig = {
       version: "1.0",
@@ -249,7 +249,7 @@ describe("store operations", () => {
   });
 
   it("readProjectConfig skips git root fallback when SENV_PROJECT_DIR is set", async () => {
-    execSync("git init -b main -q", { cwd: tempProjectDir, stdio: "ignore" });
+    await requireGitRepo(tempProjectDir);
 
     const config: store.SenvProjectConfig = {
       version: "1.0",
@@ -268,6 +268,110 @@ describe("store operations", () => {
       await expect(store.readProjectConfig()).rejects.toThrow(".senv.json not found");
     } finally {
       process.chdir(prevCwd);
+    }
+  });
+
+  it("resolveProjectDir returns git root when config exists only at repository root", async () => {
+    await requireGitRepo(tempProjectDir);
+
+    await fs.writeFile(path.join(tempProjectDir, ".senv.json"), JSON.stringify({ version: "1.0", identities: {} }));
+
+    const subdir = path.join(tempProjectDir, "pkg");
+    await fs.mkdir(subdir);
+
+    delete process.env.SENV_PROJECT_DIR;
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(subdir);
+      expect(await store.resolveProjectDir()).toBe(await fs.realpath(tempProjectDir));
+    } finally {
+      process.chdir(prevCwd);
+      process.env.SENV_PROJECT_DIR = tempProjectDir;
+    }
+  });
+
+  it("writeProjectConfig from subdirectory writes to git root config", async () => {
+    await requireGitRepo(tempProjectDir);
+
+    const initial: store.SenvProjectConfig = {
+      version: "1.0",
+      identities: { "id1": "encrypted" },
+    };
+    await fs.writeFile(path.join(tempProjectDir, ".senv.json"), JSON.stringify(initial));
+
+    const subdir = path.join(tempProjectDir, "pkg");
+    await fs.mkdir(subdir);
+
+    const updated: store.SenvProjectConfig = {
+      version: "1.0",
+      identities: { "id1": "updated" },
+      presets: { backend: ["API_KEY"] },
+    };
+
+    delete process.env.SENV_PROJECT_DIR;
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(subdir);
+      await store.writeProjectConfig(updated);
+      expect(await fs.exists(path.join(subdir, ".senv.json"))).toBe(false);
+      const rootConfig = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+      expect(rootConfig).toEqual(updated);
+    } finally {
+      process.chdir(prevCwd);
+      process.env.SENV_PROJECT_DIR = tempProjectDir;
+    }
+  });
+
+  it("getProjectKeystore from subdirectory uses git root project path", async () => {
+    await requireGitRepo(tempProjectDir);
+
+    await fs.writeFile(path.join(tempProjectDir, ".senv.json"), JSON.stringify({ version: "1.0", identities: {} }));
+
+    const pks: store.KeystoreProjectStore = {
+      "root-id": { publicKey: "PUB", privateKey: "PRIV" },
+    };
+    await store.writeKeystore({
+      version: "1.0",
+      projects: { [tempProjectDir]: pks },
+    });
+
+    const subdir = path.join(tempProjectDir, "pkg");
+    await fs.mkdir(subdir);
+
+    delete process.env.SENV_PROJECT_DIR;
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(subdir);
+      expect(await store.getProjectKeystore()).toEqual(pks);
+    } finally {
+      process.chdir(prevCwd);
+      process.env.SENV_PROJECT_DIR = tempProjectDir;
+    }
+  });
+
+  it("writeProjectKeystore from subdirectory persists under git root path", async () => {
+    await requireGitRepo(tempProjectDir);
+
+    await fs.writeFile(path.join(tempProjectDir, ".senv.json"), JSON.stringify({ version: "1.0", identities: {} }));
+
+    const subdir = path.join(tempProjectDir, "pkg");
+    await fs.mkdir(subdir);
+
+    const pks: store.KeystoreProjectStore = {
+      "sub-id": { publicKey: "P", privateKey: "K" },
+    };
+
+    delete process.env.SENV_PROJECT_DIR;
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(subdir);
+      await store.writeProjectKeystore(pks);
+      const ks = await store.readKeystore();
+      expect(ks.projects[await fs.realpath(tempProjectDir)]).toEqual(pks);
+      expect(ks.projects[await fs.realpath(subdir)]).toBeUndefined();
+    } finally {
+      process.chdir(prevCwd);
+      process.env.SENV_PROJECT_DIR = tempProjectDir;
     }
   });
 });

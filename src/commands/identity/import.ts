@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import * as readline from "node:readline/promises";
 import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
 import { getCommandOptions, isValidIdentityName } from "../utils";
@@ -62,6 +63,11 @@ export const identityImportCmd = new Command("import")
 
       await store.writeProjectKeystore(projectKeystore, keystorePath);
       console.log(`Successfully imported keys for identity '${decoded.idName}'.`);
+      if (!merged.publicKey) {
+        process.stderr.write(
+          `[WARN] Identity '${decoded.idName}' was imported decrypt-only (no public key). 'key add' and 'key rm' will fail for this identity until a public key is imported.\n`
+        );
+      }
     } catch (e: any) {
       console.error(e.message);
       process.exit(1);

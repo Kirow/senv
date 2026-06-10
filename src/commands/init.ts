@@ -11,7 +11,7 @@ export const initCmd = new Command("init")
   .action(async (idNameArg: string | undefined, _options, command) => {
     const { keystorePath } = getCommandOptions(command);
     const projectKeystore = await store.getProjectKeystore(keystorePath);
-    const configPath = store.getProjectConfigPath();
+    const configPath = await store.getProjectConfigPath();
 
     let configExists = false;
     try {
@@ -37,9 +37,10 @@ export const initCmd = new Command("init")
           console.log("All identities have matching keys in your local keystore.");
         }
 
-        await reportDuplicateKeys(projectKeystore);
+        reportDuplicateKeys(config, projectKeystore);
       } catch (err: any) {
         console.error("Failed to read existing project config:", err.message);
+        process.exit(1);
       }
       return;
     }
@@ -61,9 +62,10 @@ export const initCmd = new Command("init")
       idName = `${baseIdentity}-local`;
     }
 
-    if (!projectKeystore[idName]) {
+    let keypair = projectKeystore[idName];
+    if (!keypair) {
       console.log(`Generating new RSA keypair for identity: ${idName}...`);
-      const keypair = senvCrypto.generateRSAKeyPair();
+      keypair = senvCrypto.generateRSAKeyPair();
       projectKeystore[idName] = keypair;
       await store.writeProjectKeystore(projectKeystore, keystorePath);
     }
@@ -74,23 +76,17 @@ export const initCmd = new Command("init")
       identities: {},
     };
 
-    if (config.identities[idName]) {
-      console.warn(`Identity '${idName}' already present in config. Skipping re-add.`);
-      return;
-    }
-
-    const emptyEncrypted = senvCrypto.encryptPayload([], projectKeystore[idName].publicKey);
+    const emptyEncrypted = senvCrypto.encryptPayload([], keypair.publicKey);
     config.identities[idName] = emptyEncrypted;
     await store.writeProjectConfig(config);
     console.log(`Initialized successfully. Identity '${idName}' added.`);
   });
 
-async function reportDuplicateKeys(
+function reportDuplicateKeys(
+  config: store.SenvProjectConfig,
   projectKeystore: store.KeystoreProjectStore
-): Promise<void> {
-  const config = await store.readProjectConfig();
-
-  const grouped = new Map<string, Map<string, { value: string; identities: Set<string> }>>();
+): void {
+  const grouped = new Map<string, Map<string, { identities: Set<string> }>>();
 
   for (const [idName, encrypted] of Object.entries(config.identities)) {
     const priv = projectKeystore[idName]?.privateKey;
@@ -109,7 +105,7 @@ async function reportDuplicateKeys(
       if (existing) {
         existing.identities.add(idName);
       } else {
-        envMap.set(item.key, { value: item.value, identities: new Set([idName]) });
+        envMap.set(item.key, { identities: new Set([idName]) });
       }
     }
   }

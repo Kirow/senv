@@ -53,6 +53,17 @@ Instead of maintaining `.env` files that cannot be safely committed, `senv` encr
 - `projects` — keys are absolute project directory paths; values are identity name → RSA keypair (PEM).
 - Override the keystore path with `-k/--keystore` or `SENV_CONFIG_DIR`.
 
+### Project directory resolution
+
+Unless `SENV_PROJECT_DIR` is set, senv resolves the project directory (for `.senv.json` and keystore `projects` keys) in this order:
+
+1. **`SENV_PROJECT_DIR`** — always wins when set.
+2. **Current working directory** — when `.senv.json` exists in cwd.
+3. **Git repository root** — when cwd has no `.senv.json`, you are inside a git repo, and the repo root has `.senv.json`. Lets you run `senv key add`, `senv use`, etc. from a subdirectory without `cd` to the root.
+4. **Current working directory** — fallback when none of the above apply (commands that need an existing file will error).
+
+**Nested configs in one repo:** If both cwd and the git root contain `.senv.json`, **cwd wins**. Use this for monorepos where individual packages keep their own `.senv.json`; keep a single root config when the whole repo shares one file.
+
 ## Sharing Access
 To allow another team member to access a given identity's secrets, share that identity's private key with them out-of-band (e.g., via a secure channel). They import the base64-encoded keypair into their local keystore with `senv identity import`. There is no automatic key distribution or multi-recipient encryption; each identity is a single-recipient envelope.
 

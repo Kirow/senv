@@ -1,4 +1,4 @@
-.PHONY: build build-js build-standalone build-all install install-js install-standalone test
+.PHONY: build build-js build-standalone build-all install install-js install-standalone test typecheck check
 
 INSTALL_PATH := $(HOME)/.local/bin/senv
 
@@ -14,6 +14,12 @@ build-all: build-js build-standalone
 
 test:
 	bun test
+
+typecheck:
+	bun run typecheck
+
+check:
+	bun run check
 
 install: install-js
 

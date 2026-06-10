@@ -66,12 +66,11 @@ function getRootCommand(command: any): any {
 }
 
 export function getCommandOptions(command: any): { env: string; keystorePath?: string; envExplicit: boolean } {
-  const parentOpts = command.parent?.optsWithGlobals() || {};
-  const globalOpts = command.optsWithGlobals() || {};
+  const globalOpts = command.optsWithGlobals?.() ?? {};
   const envSource = getRootCommand(command).getOptionValueSource?.("env");
   return {
-    env: globalOpts.env || parentOpts.env || "dev",
-    keystorePath: globalOpts.keystore || parentOpts.keystore,
+    env: globalOpts.env ?? "dev",
+    keystorePath: globalOpts.keystore,
     envExplicit: envSource === "cli",
   };
 }

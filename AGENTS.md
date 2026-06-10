@@ -36,7 +36,8 @@ src/
   version.ts               # VERSION constant; single source of truth for -V output
   core/
     crypto.ts              # RSA keygen, encryptPayload, decryptPayload, isValidPEM, base64 keypair codec
-    store.ts               # Keystore + .senv.json I/O, atomicWriteFile (with fsync), version validation
+    store.ts               # Keystore + .senv.json I/O, resolveProjectDir, atomicWriteFile, version validation
+    git.ts                 # getGitRoot (cached per-process); used by resolveProjectDir
     conflict.ts            # Git conflict marker detection + multi-block parser
   commands/
     utils.ts               # isValidIdentityName, isValidEnvName, getCommandOptions, getAccessiblePayloads
@@ -74,7 +75,7 @@ skill/
 - **Version string:** `VERSION` lives in `src/version.ts`. `index.ts` uses it for `program.version(...)`. The Makefile's install collision check is version-agnostic (greps for the CLI name `Secure ENV (senv)`).
 - **Conflict resolution:** `core/conflict.ts` exports `parseGitConflictSenv` (handles multiple blocks via `matchAll`) and `pickConflictBlobWithoutPrivateKey` (owner-matching fallback).
 - **Buffer `use` output:** `use.ts` builds the full output as a string array and writes once at the end, so `eval $(senv use)` doesn't partially evaluate on error.
-- **No emojis, no comments unless asked.** The existing code has zero comments; match that.
+- **Comments:** Add brief comments for non-obvious business logic, security caveats, and resolution order (e.g. `resolveProjectDir`, `atomicWriteFile` limitations). Do not narrate obvious code. No emojis.
 - **Bun-specific:** Use `bun:test` imports, `bun $` for shellouts in tests, `process.stderr` for warnings, `process.stdout` only for actual command output. `console.log` in import is acceptable since it goes to stdout.
 
 ## Common commands
@@ -82,6 +83,13 @@ skill/
 ```bash
 # Run all tests (crypto, store, conflict, CLI integration)
 bun test
+
+# Typecheck (strict; catches things `bun build` lets through, e.g. missing imports,
+# noUncheckedIndexedAccess violations)
+bun run typecheck
+
+# Typecheck + tests
+bun run check
 
 # Bundle CLI to dist/senv (~60 KB); default `bun run build` / `make build`
 bun run build:js
@@ -92,18 +100,19 @@ bun run build:standalone
 # Install bundled JS or standalone binary to ~/.local/bin/senv
 make install          # JS (needs Bun at runtime)
 make install-standalone
-
-# Type-check (bun handles this at build time; use `bun build` to verify)
-bun build ./src/index.ts --target=bun --outfile /tmp/senv-check
 ```
+
+**Important:** `bun build` silently accepts strict-TS violations (missing imports,
+`noUncheckedIndexedAccess` issues, missing module declarations). Always run
+`bun run typecheck` before finishing a task. CI runs it before tests.
 
 ## Environment variables (consumed by the CLI)
 
 - `SENV_CONFIG_DIR` — overrides the keystore directory (default `~/.config/senv`).
-- `SENV_PROJECT_DIR` — overrides the project root (default `process.cwd()`); used to locate `.senv.json`.
+- `SENV_PROJECT_DIR` — overrides the project root; when unset, `resolveProjectDir()` picks cwd, or the git repository root when cwd has no `.senv.json` but the root does (see README).
 - `USER` / `USERNAME` — used by `init` to derive the default identity name (`<user>-local`).
 
-These are read in `core/store.ts` (`getKeystorePath`, `getProjectDir`, `getProjectConfigPath`). Tests set them in `beforeEach` to point at `mkdtemp` directories.
+These are read in `core/store.ts` (`getKeystorePath`, `resolveProjectDir`, `getProjectConfigPath`). Tests set them in `beforeEach` to point at `mkdtemp` directories.
 
 ## Testing
 
@@ -113,6 +122,7 @@ These are read in `core/store.ts` (`getKeystorePath`, `getProjectDir`, `getProje
 - `it.todo(...)` is used for known-broken behaviors that will be fixed later (e.g. multiline shell-escape).
 - For long-running tests (the two-user merge test spawns many subprocesses), pass a timeout as the 3rd arg: `it("name", async () => { ... }, 30000)`.
 - Gotcha: `readline.createInterface({ input: process.stdin, output: process.stdout }).question(...)` **hangs silently** when stdin is not a TTY (no error, no return). Always check `process.stdin.isTTY` first and short-circuit (e.g. print "Aborted." and `return`) when running in a non-interactive context. This applies to `identity rm` and `identity import` overwrite prompts.
+- Git-dependent tests use `requireGitRepo()` from `test/helpers/git.ts`; it `expect`s `git init` to succeed instead of silently returning when git is unavailable.
 
 ## Adding a new command
 
@@ -126,7 +136,6 @@ These are read in `core/store.ts` (`getKeystorePath`, `getProjectDir`, `getProje
 ## Don't
 
 - Don't import `node:crypto` from anywhere except `src/core/crypto.ts` and `src/core/store.ts` (the latter only for the `mkdir`/`writeFile`/`readFile`/`rename`/`open`).
-- Don't add comments to source code. The repo has none.
 - Don't use `import crypto` — it shadows Node's crypto and was renamed to `senvCrypto` project-wide.
 - Don't `process.exit(0)` from inside a try block — let the action return naturally.
 - Don't write to `.senv.json` or the keystore without going through `atomicWriteFile`.

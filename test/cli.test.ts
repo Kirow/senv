@@ -5,6 +5,7 @@ import * as os from "node:os";
 import { $, spawn } from "bun";
 import { VERSION, GITHUB_URL } from "../src/version";
 import { runUpdate } from "../src/commands/update";
+import { requireGitRepo } from "./helpers/git";
 
 describe("CLI operations", () => {
   let tempConfigDir: string;
@@ -39,6 +40,19 @@ describe("CLI operations", () => {
         SENV_CONFIG_DIR: tempConfigDir,
         SENV_PROJECT_DIR: tempProjectDir,
         USER: user,
+      })
+      .nothrow()
+      .quiet();
+  }
+
+  async function runCLIFromDir(cwd: string, ...args: string[]) {
+    const indexTs = path.join(import.meta.dir, "..", "src", "index.ts");
+    return await $`bun run ${indexTs} ${args}`
+      .cwd(cwd)
+      .env({
+        ...process.env,
+        SENV_CONFIG_DIR: tempConfigDir,
+        USER: "testuser",
       })
       .nothrow()
       .quiet();
@@ -315,6 +329,16 @@ describe("CLI operations", () => {
     expect(combined).toContain("Aborted");
   });
 
+  it("identity import overwrite prompt under a TTY (regression: missing readline import)", async () => {
+    await runCLI("init");
+    const exportRes = await runCLI("identity", "export", "testuser-local");
+    const b64 = exportRes.stdout.toString().trim();
+
+    const res = await runCLINoStdin("identity", "import", b64);
+    const combined = res.stdout.toString() + res.stderr.toString();
+    expect(combined).not.toContain("readline is not defined");
+  });
+
   it("emits a duplicate-key warning at init time when keys overlap across identities", async () => {
     await runCLI("init");
     // Add a key with the local user
@@ -359,8 +383,8 @@ describe("CLI operations", () => {
 
   it("update: reports up to date when latest matches VERSION", async () => {
     const origFetch = globalThis.fetch;
-    globalThis.fetch = async () =>
-      new Response(JSON.stringify({ tag_name: `v${VERSION}` }), { status: 200 });
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ tag_name: `v${VERSION}` }), { status: 200 })) as unknown as typeof globalThis.fetch;
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (msg: string) => logs.push(msg);
@@ -434,14 +458,7 @@ describe("CLI operations", () => {
   });
 
   it("resolves conflict markers from git root via senv merge", async () => {
-    const emptyTemplate = path.join(import.meta.dir, "fixtures", "empty-git-template");
-    const gitInit = await $`git init -b main --template=${emptyTemplate}`
-      .cwd(tempProjectDir)
-      .nothrow()
-      .quiet();
-    if (gitInit.exitCode !== 0) {
-      return;
-    }
+    await requireGitRepo(tempProjectDir);
 
     await runCLI("init");
     await runCLI("key", "add", "testuser-local", "KEY_THEIRS", "val_theirs");
@@ -469,6 +486,76 @@ describe("CLI operations", () => {
     const mergeRes = await runCLI("merge");
     expect(mergeRes.exitCode).toBe(0);
     expect((await fs.readFile(configPath, "utf-8"))).not.toContain("<<<<<<<");
+  });
+
+  it("key add from subdirectory updates git root .senv.json", async () => {
+    await requireGitRepo(tempProjectDir);
+
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "API_KEY", "root-secret");
+
+    const subdir = path.join(tempProjectDir, "pkg");
+    await fs.mkdir(subdir);
+
+    const addRes = await runCLIFromDir(subdir, "key", "add", "testuser-local", "DB_URL", "db-value");
+    expect(addRes.exitCode).toBe(0);
+    expect(await fs.exists(path.join(subdir, ".senv.json"))).toBe(false);
+
+    const getRes = await runCLIFromDir(subdir, "key", "get", "DB_URL");
+    expect(getRes.exitCode).toBe(0);
+    expect(getRes.stdout.toString().trim()).toBe("db-value");
+
+    const getRoot = await runCLI("key", "get", "DB_URL");
+    expect(getRoot.stdout.toString().trim()).toBe("db-value");
+  });
+
+  it("init from subdirectory detects existing git root config", async () => {
+    await requireGitRepo(tempProjectDir);
+
+    await runCLI("init");
+
+    const subdir = path.join(tempProjectDir, "pkg");
+    await fs.mkdir(subdir);
+
+    const initRes = await runCLIFromDir(subdir, "init");
+    expect(initRes.exitCode).toBe(0);
+    expect(initRes.stdout.toString()).toContain(".senv.json already exists");
+    expect(await fs.exists(path.join(subdir, ".senv.json"))).toBe(false);
+  });
+
+  it("merge from subdirectory targets git root when SENV_PROJECT_DIR is unset", async () => {
+    await requireGitRepo(tempProjectDir);
+
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "KEY_THEIRS", "val_theirs");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const baseConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const theirsBlob = baseConfig.identities["testuser-local"];
+
+    await runCLI("key", "add", "testuser-local", "KEY_OURS", "val_ours");
+    const headConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const oursBlob = headConfig.identities["testuser-local"];
+
+    const conflicted = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "testuser-local": "${oursBlob}"
+=======
+    "testuser-local": "${theirsBlob}"
+>>>>>>> branch
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const subdir = path.join(tempProjectDir, "pkg");
+    await fs.mkdir(subdir);
+
+    const mergeRes = await runCLIFromDir(subdir, "merge");
+    expect(mergeRes.exitCode).toBe(0);
+    expect((await fs.readFile(configPath, "utf-8"))).not.toContain("<<<<<<<");
+    expect(await fs.exists(path.join(subdir, ".senv.json"))).toBe(false);
   });
 
   it("resolves two-user shared identity merge conflict", async () => {
@@ -1244,6 +1331,36 @@ describe("CLI operations", () => {
 
     const merged = JSON.parse(await fs.readFile(configPath, "utf-8"));
     expect(merged.presets.backend).toEqual(["API_KEY", "DB_URL"]);
+  });
+
+  it("merge preserves presets when they appear after identities (postfix)", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "KEY_OURS", "val_ours");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const headConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const oursBlob = headConfig.identities["testuser-local"];
+
+    const conflicted = `{
+  "version": "1.0",
+  "identities": {
+<<<<<<< HEAD
+    "testuser-local": "${oursBlob}"
+=======
+    "testuser-local": "${oursBlob}"
+>>>>>>> branch
+  },
+  "presets": {
+    "backend": ["API_KEY", "DB_URL"]
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const mergeRes = await runCLI("merge");
+    expect(mergeRes.exitCode).toBe(0);
+
+    const merged = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(merged.presets?.backend).toEqual(["API_KEY", "DB_URL"]);
   });
 
   it("preset list shows all defined presets", async () => {

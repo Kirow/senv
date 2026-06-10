@@ -8,6 +8,9 @@ import {
 } from "./utils";
 
 function shellEscapeAnsiC(value: string): string {
+  // ANSI-C quoting ($'...'): escape backslash and single quote, then translate
+  // raw control chars to their shell-escape forms. Order matters — backslash MUST
+  // be escaped first so subsequent inserts of "\n" etc. are not re-escaped.
   const escaped = value
     .replace(/\\/g, "\\\\")
     .replace(/'/g, "\\'")

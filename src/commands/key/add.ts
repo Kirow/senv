@@ -50,11 +50,12 @@ export const keyAddCmd = new Command("add")
 
       const existingIdx = payload.findIndex((i) => i.key === targetKey && i.environment === env);
       if (existingIdx >= 0) {
-        if (payload[existingIdx].value === targetValue) {
+        const existing = payload[existingIdx]!;
+        if (existing.value === targetValue) {
           console.log(`'${targetKey}' in '${idName}' for env '${env}' is already up to date.`);
           return;
         }
-        payload[existingIdx].value = targetValue;
+        existing.value = targetValue;
         console.log(`Updated '${targetKey}' in '${idName}' for env '${env}'.`);
       } else {
         payload.push({ key: targetKey, value: targetValue, environment: env });

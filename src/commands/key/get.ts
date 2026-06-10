@@ -39,11 +39,11 @@ export const keyGetCmd = new Command("get")
       if (matches.length > 1) {
         const all = matches.map((m) => m.identityName).join(", ");
         console.warn(
-          `[WARN] Conflict for key '${targetKey}': defined in ${matches.length} identities (${all}). Using value from '${matches[0].identityName}'. Pass -i/--identity to disambiguate.`
+          `[WARN] Conflict for key '${targetKey}': defined in ${matches.length} identities (${all}). Using value from '${matches[0]!.identityName}'. Pass -i/--identity to disambiguate.`
         );
       }
 
-      console.log(matches[0].value);
+      console.log(matches[0]!.value);
     } catch (e: any) {
       console.error(e.message);
       process.exit(1);

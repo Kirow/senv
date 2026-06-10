@@ -19,7 +19,7 @@ export const identityAddCmd = new Command("add")
       try {
         config = await store.readProjectConfig();
       } catch (e: any) {
-        if (e.message === ".senv.json not found in the current directory.") {
+        if (e.message.includes(".senv.json not found")) {
           config = {
             version: CURRENT_PROJECT_CONFIG_VERSION,
             identities: {},

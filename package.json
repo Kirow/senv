@@ -9,6 +9,8 @@
   "scripts": {
     "test": "bun test",
     "test:coverage": "bun test --coverage --coverage-reporter=lcov",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun test",
     "build": "bun run build:js",
     "build:js": "bun build ./src/index.ts --target=bun --minify --outfile dist/senv && chmod +x dist/senv",
     "build:standalone": "bun build ./src/index.ts --compile --minify --outfile dist/senv-standalone",

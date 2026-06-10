@@ -10,7 +10,7 @@ export const installSkillCmd = new Command("skill")
   .description("Install the senv agent skill into this project")
   .action(async () => {
     try {
-      const projectDir = path.dirname(store.getProjectConfigPath());
+      const projectDir = await store.resolveProjectDir();
       const destPath = path.join(projectDir, SKILL_REL);
       await mkdir(path.dirname(destPath), { recursive: true });
       await store.atomicWriteFile(destPath, skillContent, 0o644);
