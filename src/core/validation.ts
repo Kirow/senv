@@ -86,6 +86,20 @@ export function sortPublicItems(items: SenvPublicItem[]): SenvPublicItem[] {
 }
 
 /**
+ * Sorts preset names and keys within each preset for stable on-disk ordering.
+ *
+ * @param presets - Preset map to sort (not mutated).
+ * @returns New object with preset names and keys sorted alphabetically (`localeCompare`).
+ */
+export function sortPresets(presets: Record<string, string[]>): Record<string, string[]> {
+  const sorted: Record<string, string[]> = {};
+  for (const name of Object.keys(presets).sort((a, b) => a.localeCompare(b))) {
+    sorted[name] = [...presets[name]!].sort((a, b) => a.localeCompare(b));
+  }
+  return sorted;
+}
+
+/**
  * Validates decrypted payload shape after AES-GCM decryption.
  *
  * @param parsed - Raw JSON value from inside an encrypted identity blob.

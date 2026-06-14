@@ -6,7 +6,6 @@ import * as senvCrypto from "../src/core/crypto";
 import {
   extractPresetsFromConflictedContent,
   extractPublicFromConflictedContent,
-  mergePresets,
   mergeProjectConfigs,
   runMerge,
 } from "../src/commands/merge";
@@ -15,27 +14,6 @@ import * as store from "../src/core/store";
 import * as conflict from "../src/core/conflict";
 
 describe("merge helpers", () => {
-  it("mergePresets returns undefined when both inputs are empty", () => {
-    expect(mergePresets(undefined, undefined)).toBeUndefined();
-    expect(mergePresets({}, {})).toBeUndefined();
-  });
-
-  it("mergePresets unions and deduplicates keys", () => {
-    const result = mergePresets(
-      { backend: ["API_KEY", "DB_URL"] },
-      { backend: ["DB_URL", "SECRET"], frontend: ["PUBLIC_URL"] }
-    );
-    expect(result).toEqual({
-      backend: ["API_KEY", "DB_URL", "SECRET"],
-      frontend: ["PUBLIC_URL"],
-    });
-  });
-
-  it("mergePresets returns one side when the other is absent", () => {
-    expect(mergePresets({ a: ["X"] }, undefined)).toEqual({ a: ["X"] });
-    expect(mergePresets(undefined, { b: ["Y"] })).toEqual({ b: ["Y"] });
-  });
-
   it("extractPresetsFromConflictedContent reads presets from prefix", () => {
     const content = `{
   "version": "1.0",

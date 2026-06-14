@@ -13,8 +13,15 @@ export const presetListCmd = new Command("list")
         return;
       }
 
-      for (const [presetName, keys] of Object.entries(presets).sort(([a], [b]) => a.localeCompare(b))) {
-        console.log(`${presetName}: ${keys.join(", ")}`);
+      const entries = Object.entries(presets).sort(([a], [b]) => a.localeCompare(b));
+
+      for (let i = 0; i < entries.length; i++) {
+        const [presetName, keys] = entries[i]!;
+        if (i > 0) console.log("");
+        console.log(`${presetName}:`);
+        for (const key of keys) {
+          console.log(` - ${key}`);
+        }
       }
     } catch (e: any) {
       console.error(e.message);

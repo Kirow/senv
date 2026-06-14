@@ -2,7 +2,7 @@ import { access, mkdir, open, readFile, realpath, rename, unlink } from "node:fs
 import * as path from "node:path";
 import * as os from "node:os";
 import { getGitRoot } from "./git";
-import { PUBLIC_IDENTITY_LABEL, sortPublicItems, validatePublicItems } from "./validation";
+import { PUBLIC_IDENTITY_LABEL, sortPresets, sortPublicItems, validatePublicItems } from "./validation";
 
 export { PUBLIC_IDENTITY_LABEL } from "./validation";
 
@@ -138,6 +138,7 @@ export function validateProjectConfigVersion(parsed: any): SenvProjectConfig {
         }
       }
     }
+    parsed.presets = sortPresets(parsed.presets);
   }
 
   if (parsed.public !== undefined) {
@@ -451,6 +452,9 @@ export async function readProjectConfig(): Promise<SenvProjectConfig> {
  * @param config - Project config to persist.
  */
 export async function writeProjectConfig(config: SenvProjectConfig): Promise<void> {
+  if (config.presets) {
+    config.presets = sortPresets(config.presets);
+  }
   const p = await getProjectConfigPath();
   await atomicWriteFile(p, JSON.stringify(config, null, 2), 0o600);
 }

@@ -1198,6 +1198,11 @@ describe("CLI operations", () => {
 
     const config2 = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
     expect(config2.presets.backend).toEqual(["API_KEY", "DB_URL", "REDIS_URL"]);
+
+    const sortRes = await runCLI("preset", "add", "backend", "Z_KEY", "A_KEY");
+    expect(sortRes.exitCode).toBe(0);
+    const config3 = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(config3.presets.backend).toEqual(["A_KEY", "API_KEY", "DB_URL", "REDIS_URL", "Z_KEY"]);
   });
 
   it("preset add rejects invalid preset and key names", async () => {
@@ -1310,7 +1315,7 @@ describe("CLI operations", () => {
     expect(mergeRes.stderr.toString()).toContain("Unsupported .senv.json version");
   });
 
-  it("merge unions presets from two config files", async () => {
+  it("merge ignores presets from FILE_B", async () => {
     await runCLI("init");
     await runCLI("preset", "add", "backend", "API_KEY", "DB_URL");
 
@@ -1332,8 +1337,8 @@ describe("CLI operations", () => {
     expect(mergeRes.exitCode).toBe(0);
 
     const merged = JSON.parse(await fs.readFile(configPath, "utf-8"));
-    expect(merged.presets.backend).toEqual(["API_KEY", "DB_URL", "REDIS_URL"]);
-    expect(merged.presets.frontend).toEqual(["PUBLIC_URL"]);
+    expect(merged.presets.backend).toEqual(["API_KEY", "DB_URL"]);
+    expect(merged.presets.frontend).toBeUndefined();
     expect(merged.identities).toEqual(configA.identities);
   });
 
@@ -1435,8 +1440,9 @@ describe("CLI operations", () => {
 
     const res = await runCLI("preset", "list");
     expect(res.exitCode).toBe(0);
-    expect(res.stdout.toString()).toContain("backend: API_KEY, DB_URL");
-    expect(res.stdout.toString()).toContain("frontend: PUBLIC_URL");
+    expect(res.stdout.toString()).toBe(
+      "backend:\n - API_KEY\n - DB_URL\n\nfrontend:\n - PUBLIC_URL\n"
+    );
   });
 
   it("preset list shows message when no presets defined", async () => {

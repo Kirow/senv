@@ -8,37 +8,6 @@ import { getCommandOptions } from "./utils";
 import * as fs from "node:fs/promises";
 
 /**
- * Union-merges two preset maps, deduplicating keys within each preset name.
- *
- * @param a - Base preset map (may be undefined).
- * @param b - Incoming preset map to merge in (may be undefined).
- * @returns Merged map, or `undefined` when both inputs are empty/absent.
- */
-export function mergePresets(
-  a?: Record<string, string[]>,
-  b?: Record<string, string[]>
-): Record<string, string[]> | undefined {
-  if (!a && !b) return undefined;
-  const merged: Record<string, string[]> = { ...(a || {}) };
-  if (b) {
-    for (const [name, keysB] of Object.entries(b)) {
-      if (!merged[name]) {
-        merged[name] = [...keysB];
-      } else {
-        const seen = new Set(merged[name]);
-        for (const k of keysB) {
-          if (!seen.has(k)) {
-            merged[name]!.push(k);
-            seen.add(k);
-          }
-        }
-      }
-    }
-  }
-  return Object.keys(merged).length > 0 ? merged : undefined;
-}
-
-/**
  * Extracts the `presets` object from the non-conflict prefix or postfix of a conflicted file.
  *
  * Git conflict markers split the `identities` block; `presets` often survive intact outside the markers.
@@ -92,14 +61,14 @@ export function extractPublicFromConflictedContent(content: string): SenvPublicI
 }
 
 /**
- * Merges two project configs at the identity and preset level.
+ * Merges two project configs at the identity level.
  *
  * Decryptable identities are merged at the payload level; others use the owner-name heuristic
  * via {@link conflict.pickConflictBlobWithoutPrivateKey}. Re-encrypted payloads use the local
  * public key only — other recipients lose access (see AGENTS.md).
  *
- * `public` is never merged: {@link configA}'s `public` section is copied as-is when present;
- * incoming `configB.public` is ignored (resolve `public` conflicts with git merge tools first).
+ * `public` and `presets` are never merged: {@link configA}'s plaintext sections are copied as-is
+ * when present; incoming `configB` plaintext is ignored (resolve plaintext conflicts with git merge tools).
  *
  * @param configA - Ours / base config.
  * @param configB - Theirs / incoming config.
@@ -118,7 +87,7 @@ export function mergeProjectConfigs(
   const merged: SenvProjectConfig = {
     ...configA,
     identities: { ...configA.identities },
-    presets: mergePresets(configA.presets, configB.presets),
+    presets: configA.presets,
     public: configA.public,
   };
   const messages: string[] = [];
@@ -210,7 +179,7 @@ export async function runMerge(
     if (conflict.hasGitConflictMarkers(contentA)) {
       const extractedPresets = extractPresetsFromConflictedContent(contentA);
       if (extractedPresets) {
-        merged.presets = mergePresets(extractedPresets, merged.presets);
+        merged.presets = extractedPresets;
       }
       const extractedPublic = extractPublicFromConflictedContent(contentA);
       if (extractedPublic) {

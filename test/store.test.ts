@@ -410,6 +410,23 @@ describe("store operations", () => {
     expect(await store.readProjectConfig()).toEqual(config);
   });
 
+  it("writeProjectConfig sorts preset names and keys alphabetically", async () => {
+    const config: store.SenvProjectConfig = {
+      version: "1.0",
+      presets: {
+        zebra: ["Z_KEY", "A_KEY"],
+        alpha: ["M_KEY", "B_KEY"],
+      },
+      identities: { "id1": "encrypted" },
+    };
+    await store.writeProjectConfig(config);
+    const onDisk = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(Object.keys(onDisk.presets)).toEqual(["alpha", "zebra"]);
+    expect(onDisk.presets.alpha).toEqual(["B_KEY", "M_KEY"]);
+    expect(onDisk.presets.zebra).toEqual(["A_KEY", "Z_KEY"]);
+    expect(await store.readProjectConfig()).toEqual(onDisk);
+  });
+
   it("readProjectConfig falls back to git root when .senv.json is missing in cwd", async () => {
     await requireGitRepo(tempProjectDir);
 
