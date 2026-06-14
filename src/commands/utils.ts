@@ -1,6 +1,11 @@
 import * as senvCrypto from "../core/crypto";
 import * as store from "../core/store";
-import { type KeystoreProjectStore, type SenvPayload } from "../core/store";
+import {
+  type KeystoreProjectStore,
+  type SenvPayload,
+  type SenvProjectConfig,
+  PUBLIC_IDENTITY_LABEL,
+} from "../core/store";
 import { isValidEnvName, isValidIdentityName } from "../core/validation";
 
 export { isValidEnvName, isValidIdentityName } from "../core/validation";
@@ -21,10 +26,10 @@ export interface AccessibleKeyEntry {
 }
 
 /**
- * Aggregates decrypted key-value pairs across all locally decryptable identities.
+ * Aggregates public and decrypted key-value pairs for one environment.
  *
- * When a key appears in multiple identities, the first decrypted value wins;
- * all source identities are tracked for conflict warnings.
+ * Public keys are loaded first; encrypted identity payloads skip keys already in `public`.
+ * When a key appears in multiple identities, the first decrypted value wins.
  *
  * @param env - Target environment (`-e/--env`, default `dev`).
  * @param keystorePath - Optional `--keystore` override.
@@ -34,12 +39,22 @@ export async function getAccessibleKeyMap(
   env: string,
   keystorePath?: string
 ): Promise<Map<string, AccessibleKeyEntry>> {
-  const payloads = await getAccessiblePayloads(env, keystorePath);
+  const projectConfig = await store.readProjectConfig();
   const aggregated = new Map<string, AccessibleKeyEntry>();
 
+  for (const item of store.getPublicItemsForEnv(projectConfig, env)) {
+    aggregated.set(item.key, {
+      value: item.value,
+      identityName: PUBLIC_IDENTITY_LABEL,
+      identities: [PUBLIC_IDENTITY_LABEL],
+    });
+  }
+
+  const payloads = await getAccessiblePayloads(env, keystorePath);
   for (const { identityName, payload } of payloads) {
     for (const item of payload) {
       const existing = aggregated.get(item.key);
+      if (existing?.identityName === store.PUBLIC_IDENTITY_LABEL) continue;
       if (!existing) {
         aggregated.set(item.key, { value: item.value, identityName, identities: [identityName] });
       } else if (!existing.identities.includes(identityName)) {
@@ -49,6 +64,56 @@ export async function getAccessibleKeyMap(
   }
 
   return aggregated;
+}
+
+/**
+ * @param config - Project config.
+ * @param env - Target environment.
+ * @param key - Environment variable name.
+ * @throws When `key` already exists in `public` for `env`.
+ */
+export function assertKeyNotInPublic(config: SenvProjectConfig, env: string, key: string): void {
+  if (store.findPublicItemIndex(config, env, key) >= 0) {
+    throw new Error(
+      `Key '${key}' already exists as a public value for environment '${env}'. Remove it with 'senv key rm --public ${key}' first.`
+    );
+  }
+}
+
+/**
+ * @param config - Project config.
+ * @param env - Target environment.
+ * @param key - Environment variable name.
+ * @param keystorePath - Optional `--keystore` override.
+ * @throws When any **locally decryptable** identity already defines `key` in `env`.
+ *
+ * Only identities with a private key in the local keystore are checked. A public value can
+ * still duplicate a teammate's encrypted key you cannot decrypt — coordinate via code review
+ * or resolve conflicts manually (see README).
+ */
+export async function assertKeyNotInEncrypted(
+  config: SenvProjectConfig,
+  env: string,
+  key: string,
+  keystorePath?: string
+): Promise<void> {
+  const keystore = await store.getProjectKeystore(keystorePath);
+  for (const [idName, encryptedString] of Object.entries(config.identities)) {
+    const privateKey = keystore[idName]?.privateKey;
+    if (!privateKey) continue;
+    try {
+      const payload = senvCrypto.decryptPayload(encryptedString, privateKey);
+      if (payload.some((item) => item.environment === env && item.key === key)) {
+        throw new Error(
+          `Key '${key}' already exists in encrypted identity '${idName}' for environment '${env}'.`
+        );
+      }
+    } catch (e: any) {
+      if (e.message.includes("already exists in encrypted identity")) {
+        throw e;
+      }
+    }
+  }
 }
 
 /**
@@ -157,4 +222,26 @@ export async function getAccessiblePayloads(
   }
 
   return results;
+}
+
+/**
+ * Returns public items from project config, optionally filtered by environment.
+ *
+ * @param env - Environment to filter by when `filterByEnv` is true.
+ * @param filterByEnv - When false, return all environments (used by `key list` without `-e`).
+ * @returns Public items with {@link PUBLIC_IDENTITY_LABEL} as the source identity.
+ */
+export async function getPublicListEntries(
+  env: string,
+  filterByEnv = true
+): Promise<{ identityName: string; payload: SenvPayload }[]> {
+  const projectConfig = await store.readProjectConfig();
+  const items = filterByEnv
+    ? store.getPublicItemsForEnv(projectConfig, env)
+    : (projectConfig.public ?? []);
+  if (items.length === 0) return [];
+  return [{
+    identityName: PUBLIC_IDENTITY_LABEL,
+    payload: items.map((item) => ({ key: item.key, value: item.value, environment: item.environment })),
+  }];
 }

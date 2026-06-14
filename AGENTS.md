@@ -17,7 +17,8 @@ A terminal-based, decentralized encrypted environment-variable manager. Each use
 - Keystore is plaintext JSON; private keys are protected only by filesystem permissions (`0600`).
 - No passphrase wrapping on private keys.
 - No file locking; concurrent edits to `.senv.json` can clobber each other (known limitation, intentionally accepted).
-- `merge` re-encrypts merged payloads with the local user's public key only — recipients from other users lose access. Intentional for now, will be revisited.
+- `merge` re-encrypts merged payloads with the local user's public key only — recipients from other users lose access. Intentional for now, will be revisited. `merge` handles **encrypted `identities` only**; `public` / `presets` are not merged — resolve plaintext conflicts with git merge tools. `senv merge` **preserves** intact `public` / `presets` from outside identity conflict markers (does not wipe them).
+- **Public vs encrypted exclusivity:** `assertKeyNotInEncrypted` only scans identities decryptable with the local keystore. Cross-user duplicate `environment:key` pairs require manual coordination.
 - `senv update` downloads and executes the install script from GitHub (same trust model as `curl | sh` install).
 - Git conflict auto-resolution matches the `>>>>>>>` branch label to the `<owner>-local` identity owner name; non-matching branch names (e.g. `feature/alice-local`) may pick the wrong blob when you lack a private key.
 
@@ -38,15 +39,18 @@ src/
   version.ts               # VERSION constant; single source of truth for -V output
   core/
     crypto.ts              # RSA keygen, encryptPayload, decryptPayload, isValidPEM, base64 keypair codec
-    validation.ts          # isValidIdentityName, isValidEnvName, validatePayload, MAX_VALUE_BYTES
-    store.ts               # Keystore + .senv.json I/O, resolveProjectDir, atomicWriteFile, version validation
+    validation.ts          # isValidIdentityName, isValidEnvName, validatePayload, validatePublicItems, MAX_VALUE_BYTES
+    store.ts               # Keystore + .senv.json I/O, public helpers, resolveProjectDir, atomicWriteFile, version validation
+    migration.ts           # .senv.json schema upgrade chain (used by `senv upgrade`)
     git.ts                 # getGitRoot (cached per-process); used by resolveProjectDir
     conflict.ts            # Git conflict marker detection + multi-block parser
   commands/
-    utils.ts               # getCommandOptions, getAccessiblePayloads, requirePublicKeyForEncrypt; re-exports validators
+    utils.ts               # getCommandOptions, getAccessiblePayloads, getAccessibleKeyMap, getPublicListEntries, mutual-exclusivity helpers; re-exports validators
     init.ts                # First-run setup, duplicate-key warning, missing-key warning
     use.ts                 # `eval $(senv use)` — buffered output
     merge.ts               # Git merge conflict resolution (uses atomicWriteFile)
+    migrate.ts             # Import missing keys from a .env file
+    upgrade.ts             # Upgrade .senv.json schema version (`senv upgrade`)
     identity/
       add.ts, list.ts, rm.ts, export.ts, import.ts
     key/
@@ -58,6 +62,7 @@ test/
   store.test.ts            # Keystore I/O, atomic writes, mode 0600, version validation
   conflict.test.ts         # Conflict marker parsing, single + multi-block, owner matching
   merge.test.ts            # mergePresets, extractPresets, mergeProjectConfigs unit tests
+  migration.test.ts      # upgradeProjectConfig schema migration chain
   cli.test.ts              # End-to-end via `bun $` spawning `bun run ./src/index.ts`
 Makefile                   # build-js / build-standalone / install-js / install-standalone
 README.md                  # User-facing docs
@@ -70,12 +75,12 @@ skill/
 - **Imports:** Always use `import * as senvCrypto from "../core/crypto"` (NOT `crypto`) in command files. The local module shadows Node's `crypto`; the `senvCrypto` rename is deliberate. Only `core/crypto.ts` and `core/store.ts` may import `node:crypto`.
 - **Error handling:** Commands wrap their work in `try/catch` and call `console.error(e.message); process.exit(1)`. Don't `throw` uncaught from an action — commander will print a stack trace.
 - **CLI options:** Use `getCommandOptions(command)` from `commands/utils.ts` to read the global `-e/--env` and `-k/--keystore` flags. Don't re-implement the parent/global opts fallback. Don't read `command.optsWithGlobals()` directly in command actions.
-- **Identity names:** Must match `/^[A-Za-z0-9._-]+$/`. Enforce via `isValidIdentityName` from `core/validation.ts` (re-exported in `commands/utils.ts`).
+- **Identity names:** Must match `/^[A-Za-z0-9._-]+$/` and must not be `public` (reserved for the project-wide public section label). Enforce via `isValidIdentityName` from `core/validation.ts` (re-exported in `commands/utils.ts`).
 - **Env var names:** Must match `/^[A-Za-z_][A-Za-z0-9_]*$/`. Enforce via `isValidEnvName` at write-time, not just at export-time.
 - **PEM validation:** Use `isValidPEM(key, "public" | "private")` from `core/crypto.ts` rather than string-matching the `BEGIN ... KEY` header. The latter is forgeable.
 - **Atomic writes:** All file writes go through `atomicWriteFile(filePath, data, mode)` (exported from `core/store.ts`). It does tmp-file + fsync + rename. Direct `fs.writeFile` outside that helper is a bug.
 - **File permissions:** Keystore and `.senv.json` must be created with `mode: 0o600`. The config dir with `0o700`. Tests assert this.
-- **Versioning:** `CURRENT_KEYSTORE_VERSION` and `CURRENT_PROJECT_CONFIG_VERSION` are in `core/store.ts`. Bumping requires adding a case in `validateKeystoreVersion` and reading from the constant (not hardcoding `"1.0"`).
+- **Versioning:** `CURRENT_KEYSTORE_VERSION` and `CURRENT_PROJECT_CONFIG_VERSION` are in `core/store.ts`. `SUPPORTED_PROJECT_CONFIG_VERSIONS` lists readable legacy versions (e.g. `1.0`, `1.1`). Bumping requires updating validation and reading from constants (not hardcoding `"1.0"`). Schema upgrades are explicit via `senv upgrade` (`core/migration.ts`); reads accept legacy versions without rewriting.
 - **Version string:** `VERSION` lives in `src/version.ts`. `index.ts` uses it for `program.version(...)`. The Makefile's install collision check is version-agnostic (greps for the CLI name `Secure ENV (senv)`).
 - **Conflict resolution:** `core/conflict.ts` exports `parseGitConflictSenv` (handles multiple blocks via `matchAll`) and `pickConflictBlobWithoutPrivateKey` (owner-matching fallback).
 - **Buffer `use` output:** `use.ts` builds the full output as a string array and writes once at the end, so `eval $(senv use)` doesn't partially evaluate on error.

@@ -19,7 +19,11 @@ Instead of maintaining `.env` files that cannot be safely committed, `senv` encr
 
 ```json
 {
-  "version": "1.0",
+  "version": "1.1",
+  "public": [
+    { "key": "PUBLIC_URL", "value": "http://localhost:3000", "environment": "dev" },
+    { "key": "LOG_LEVEL", "value": "debug", "environment": "dev" }
+  ],
   "presets": {
     "backend": ["API_KEY", "DB_URL"],
     "frontend": ["PUBLIC_URL"]
@@ -31,8 +35,31 @@ Instead of maintaining `.env` files that cannot be safely committed, `senv` encr
 }
 ```
 
-- `identities` — one encrypted blob per identity; values are opaque base64 strings.
+- `identities` — one encrypted blob per identity; values are opaque base64 strings (see below).
+- `public` — optional project-wide plaintext values (URLs, modes, etc.); same item shape as decrypted payload entries (`key`, `value`, `environment`). Readable without a keystore. A key cannot exist in both `public` and an encrypted identity for the same environment when you can decrypt the relevant identities locally (see limitation below).
 - `presets` — optional plaintext lists of env-var **names** (not values); used by `senv use <preset>` and `senv preset`.
+
+**Inside each identity blob** — each value in `identities` is a base64 string. Decoding it yields JSON with the hybrid crypto envelope; decrypting that yields the actual secrets:
+
+```json
+// After base64-decode (still encrypted; safe to commit)
+{
+  "encryptedDEK": "<RSA-OAEP-wrapped AES-256 key>",
+  "iv": "<12-byte GCM nonce, base64>",
+  "authTag": "<GCM auth tag, base64>",
+  "encryptedPayload": "<AES-256-GCM ciphertext of the JSON below, base64>"
+}
+```
+
+```json
+// After RSA + AES-GCM decrypt (plaintext; never stored on disk)
+[
+  { "key": "API_KEY", "value": "super_secret_value", "environment": "dev" },
+  { "key": "DB_URL", "value": "postgres://...", "environment": "prod" }
+]
+```
+
+Each item is one env var scoped to an environment (`dev`, `prod`, or any string you pass to `-e/--env`). Keys must match `/^[A-Za-z_][A-Za-z0-9_]*$/`; values are strings up to 16 KB. The array can be empty. Multiple items may share the same `key` when `environment` differs.
 
 **`~/.config/senv/identity.json`** (never commit):
 
@@ -132,19 +159,28 @@ senv init
 ### 2. Manage Environment Variables
 Add, remove, and list variables. By default, `senv` targets the `dev` environment. You can specify a different environment using the `-e` or `--env` flag.
 ```bash
-# Add a variable
+# Add a secret (encrypted, per identity)
 senv key add my-identity API_KEY "super_secret_value"
 
-# List masked variables (by default: all environments, grouped by identity)
+# Add a public value (plaintext in .senv.json, no identity or keystore required)
+senv key add --public PUBLIC_URL "http://localhost:3000"
+senv key rm --public PUBLIC_URL
+
+# List variables (public values shown in plaintext; secrets masked)
 senv key list
 senv key list -e prod
 senv key list -i my-identity
+senv key list -i public
 
 # Get a plaintext value
 senv key get API_KEY
 ```
 
 > When the same key exists in multiple identities, `key get` / `key list` show a conflict warning on stderr and use the first-encountered identity's value. Pass `-i <name>` (or `--identity <name>`) to disambiguate. `key list` without `-e` shows all environments grouped by identity; with `-e` restricts to that environment.
+
+> **Public vs encrypted exclusivity:** `senv` rejects adding a public key when any identity you can decrypt locally already defines that key (and vice versa). If a teammate's encrypted blob uses the same key name and you lack their private key, `senv` cannot detect the overlap — review `.senv.json` in git before adding public values.
+
+> The identity name `public` is reserved for the project-wide public section (`key list -i public`). Use a different name for encrypted identities.
 
 ### 3. Apply the Variables
 You can easily source your decrypted environment variables into your active shell session:
@@ -195,28 +231,42 @@ senv identity import "<BASE64_STRING>"
 ```
 
 ### 6. Git Merge Conflicts
-If multiple people edit `.senv.json` simultaneously, use the merge command to safely merge conflicting identity payloads:
+If multiple people edit `.senv.json` simultaneously, use the merge command to safely merge conflicting **identity** payloads:
 ```bash
 senv merge .senv.json .senv.incoming.json
 ```
 
+`senv merge` only resolves encrypted `identities` blobs. Conflicts in `public`, `presets`, or other plaintext sections should be resolved with normal git merge tools **before or after** running `senv merge`.
+
+When identity conflict markers are present, `senv merge` **preserves** an intact `public` array from outside the conflict block (same as `presets`). It does not merge or auto-resolve `public` — only keeps what already survived in the file. Incoming `public` from a second file argument is ignored; use git to reconcile plaintext sections.
+
 When git conflict markers are present, `senv merge` uses a branch-name heuristic to pick incoming blobs for identities you cannot decrypt: the `>>>>>>>` label is matched against the `<owner>-local` portion of the identity name (e.g. branch `alice` matches `alice-local`). Branch names that do not match this pattern (e.g. `feature/alice-local`) may keep the wrong side — use explicit `FILE_A` + `FILE_B` merge instead.
 
 ### 7. Migrate from `.env`
-One-time import of keys from a plaintext `.env` file into an identity:
+One-time import of keys from a plaintext `.env` file:
 ```bash
+# Into an encrypted identity
 senv migrate my-identity .env
-senv migrate my-identity path/to/.env
+
+# Into the public section (no identity required)
+senv migrate --public .env
 ```
 Values larger than 16 KB are skipped with a warning. Uses the current `-e/--env` environment (default `dev`).
 
-### 8. Self-update
+### 8. Schema upgrade
+Bump an older `.senv.json` on disk to the current schema version (e.g. `1.0` → `1.1`):
+```bash
+senv upgrade
+```
+Older versions remain readable without upgrading; this only rewrites the `version` field (and normalizes `public` if present). Not the same as `senv migrate` (`.env` import) or `senv update` (CLI self-update).
+
+### 9. Self-update
 ```bash
 senv update
 ```
 Checks GitHub for a newer release and runs the same install script as [Quick Install](#quick-install) (`curl … | sh`). Only use on networks and sources you trust.
 
-### 9. Agent Skill
+### 10. Agent Skill
 Install the senv agent skill so AI tools know how to use the CLI in this project:
 ```bash
 senv install skill

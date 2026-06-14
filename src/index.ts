@@ -5,6 +5,7 @@ import { initCmd } from "./commands/init";
 import { useCmd } from "./commands/use";
 import { mergeCmd } from "./commands/merge";
 import { migrateCmd } from "./commands/migrate";
+import { upgradeCmd } from "./commands/upgrade";
 import { updateCmd } from "./commands/update";
 import { VERSION, GITHUB_URL } from "./version";
 
@@ -40,6 +41,7 @@ program.addCommand(initCmd);
 program.addCommand(useCmd);
 program.addCommand(mergeCmd);
 program.addCommand(migrateCmd);
+program.addCommand(upgradeCmd);
 program.addCommand(updateCmd);
 
 const identityGroup = new Command("identity").description("Manage identities");

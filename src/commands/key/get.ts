@@ -1,15 +1,32 @@
 import { Command } from "commander";
+import * as store from "../../core/store";
+import { PUBLIC_IDENTITY_LABEL } from "../../core/store";
 import { getAccessiblePayloads, getCommandOptions } from "../utils";
 
 export const keyGetCmd = new Command("get")
   .argument("<KEY>", "The key to retrieve")
-  .option("-i, --identity <name>", "Pick a specific identity when the key exists in multiple")
-  .description("Returns the decrypted plaintext value for a key")
+  .option("-i, --identity <name>", "Pick a specific identity when the key exists in multiple (not used for public keys)")
+  .description("Returns the plaintext value for a key (public or decrypted)")
   .action(async (targetKey, options, command) => {
     const { env, keystorePath } = getCommandOptions(command);
     const wantedIdentity = options.identity as string | undefined;
 
     try {
+      const config = await store.readProjectConfig();
+      const publicItems = store.getPublicItemsForEnv(config, env);
+      const publicMatch = publicItems.find((item) => item.key === targetKey);
+
+      if (publicMatch) {
+        if (wantedIdentity && wantedIdentity !== PUBLIC_IDENTITY_LABEL) {
+          console.error(
+            `Key '${targetKey}' is a public value for environment '${env}', not in identity '${wantedIdentity}'.`
+          );
+          process.exit(1);
+        }
+        console.log(publicMatch.value);
+        return;
+      }
+
       const payloads = await getAccessiblePayloads(env, keystorePath);
       const matches: { value: string; identityName: string }[] = [];
 

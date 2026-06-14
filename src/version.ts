@@ -1,5 +1,5 @@
 /** Current CLI version string (`senv -V`). Single source of truth — do not hardcode elsewhere. */
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 /** Canonical project URL shown in `senv -V` output. */
 export const GITHUB_URL = "https://github.com/Kirow/senv";

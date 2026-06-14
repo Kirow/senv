@@ -1,4 +1,4 @@
-import { type SenvProjectConfig, CURRENT_PROJECT_CONFIG_VERSION } from "./store";
+import { type SenvProjectConfig, CURRENT_PROJECT_CONFIG_VERSION, SUPPORTED_PROJECT_CONFIG_VERSIONS } from "./store";
 
 /**
  * @param content - Raw `.senv.json` file contents.
@@ -14,11 +14,12 @@ function extractVersion(prefix: string): string {
   return match ? match[1]! : CURRENT_PROJECT_CONFIG_VERSION;
 }
 
-/** @param version - Version string from conflict prefix. @throws When it does not match {@link CURRENT_PROJECT_CONFIG_VERSION}. */
+/** @param version - Version string from conflict prefix. @throws When it is not a supported project config version. */
 function validateSenvConfigVersion(version: string): void {
-  if (version !== CURRENT_PROJECT_CONFIG_VERSION) {
+  const supported = SUPPORTED_PROJECT_CONFIG_VERSIONS as readonly string[];
+  if (!supported.includes(version)) {
     throw new Error(
-      `Unsupported .senv.json version in conflict. Expected '${CURRENT_PROJECT_CONFIG_VERSION}'. Got '${version}'.`
+      `Unsupported .senv.json version in conflict. Expected one of ${supported.map((v) => `'${v}'`).join(", ")}. Got '${version}'.`
     );
   }
 }

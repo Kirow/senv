@@ -4,7 +4,7 @@ description: >-
   Manage encrypted environment variables with the senv CLI (.senv.json, hybrid
   RSA/AES-GCM). Use when a project has .senv.json, when the user mentions senv
   or secure environment variables, or when adding, reading, sharing, or merging
-  encrypted env secrets.
+  encrypted env secrets, or public plaintext config values in .senv.json.
 ---
 
 # senv — Secure Environment Variables
@@ -15,6 +15,7 @@ Terminal CLI for decentralized, encrypted env-var management. Payloads live in `
 
 - Project contains `.senv.json`
 - User asks to add, update, list, remove, or load encrypted env vars
+- User asks to add or list **public** (non-secret) values such as URLs, modes, or feature flags visible in `.senv.json`
 - User wants named subsets of keys (`preset`) for `senv use <preset>`
 - User needs to share access or resolve a `.senv.json` git merge conflict
 - User wants AI agents to manage secrets without plain `.env` files in source control
@@ -23,8 +24,9 @@ Terminal CLI for decentralized, encrypted env-var management. Payloads live in `
 
 - **Never commit** `identity.json` or any exported private key material
 - **Never paste** full secret values or private keys into chat unless the user explicitly asks
-- Prefer `senv key list` (masked output) over `senv key get` when inspecting state
-- `.senv.json` is encrypted — safe to read and commit; do not try to decode it manually
+- Prefer `senv key list` (masked output for secrets; public values shown in plaintext) over `senv key get` when inspecting state
+- `.senv.json` encrypts per-identity secrets; the optional `public` array is **plaintext** in the file — safe for URLs/modes, not for secrets
+- Do not put secrets in `public`; use `senv key add --public` only for non-sensitive team config
 - Do not hardcode secrets into source files; use `senv key add` and `eval $(senv use)` in shell sessions
 - `identity export` output is sensitive — treat it like a private key
 
@@ -55,9 +57,27 @@ Install this skill into a project: `senv install skill` → `.agents/skills/secu
 
 ## Naming constraints
 
-- **Identity names:** `/^[A-Za-z0-9._-]+$/` (e.g. `alice-local`)
+- **Identity names:** `/^[A-Za-z0-9._-]+$/` (e.g. `alice-local`). The name `public` is **reserved** (used as the label for project-wide public keys in `key list -i public`).
 - **Preset names:** same rules as identity names
 - **Env var names:** `/^[A-Za-z_][A-Za-z0-9_]*$/` (standard shell identifier)
+
+## Public vs encrypted values
+
+`.senv.json` (schema `1.1`) supports two storage modes for env vars:
+
+| | **Encrypted** (`identities`) | **Public** (`public` array) |
+|--|------------------------------|-----------------------------|
+| Storage | Per-identity RSA/AES-GCM blob | Plaintext JSON array |
+| Who can read | Holders of that identity's private key | Anyone with the repo (no keystore) |
+| CLI write | `senv key add <identity> KEY VALUE` | `senv key add --public KEY VALUE` |
+| `key list` | Masked (`a***y`) | Full plaintext |
+| Use case | API keys, passwords, tokens | URLs, modes, feature flags |
+
+Each record uses the same shape: `{ "key", "value", "environment" }`. Public items may include extra fields (e.g. future `comment`) preserved on round-trip.
+
+**Mutual exclusivity:** For a given `environment:key`, a value lives in **either** `public` **or** an encrypted identity — not both. Enforced when you can decrypt the relevant identities locally. If a teammate's encrypted blob uses the same key and you lack their private key, `senv` cannot detect the overlap; review `.senv.json` in git before adding public values.
+
+**Precedence in `use` / `get`:** Public values win when both exist (should not happen if exclusivity is enforced).
 
 ## Common workflows
 
@@ -76,25 +96,36 @@ senv key add <identity> API_KEY "secret_value"
 senv key add <identity> API_KEY "prod_value" -e prod
 ```
 
+### Add or update a public (non-secret) value
+
+No identity or keystore required. Values are stored in plaintext under `public` in `.senv.json`.
+
+```bash
+senv key add --public PUBLIC_URL "http://localhost:3000"
+senv key add --public LOG_LEVEL "debug" -e prod
+senv key rm --public PUBLIC_URL
+```
+
 ### Inspect secrets (prefer list over get)
 
 ```bash
-senv key list           # all environments, all identities
-senv key list -e prod   # prod env only, all identities
-senv key list -i <identity>  # all environments for a single identity
-senv key list -e prod -i <identity>  # filtered by both
+senv key list           # all environments; public plaintext, secrets masked
+senv key list -e prod   # prod env only
+senv key list -i <identity>  # single identity (or `public` for public keys only)
+senv key list -e prod -i public
 ```
 
-Output is grouped `Keys for environment 'ENV' [IDENTITY]:`. Conflict warnings emitted on stderr.
+Output is grouped `Keys for environment 'ENV' [IDENTITY]:`. Entries are sorted by `(environment, key)`. Conflict warnings emitted on stderr.
 
 ### Read a single value (only when needed)
 
 ```bash
 senv key get API_KEY
+senv key get PUBLIC_URL          # checks public first, then encrypted identities
 senv key get API_KEY -e prod -i <identity>
 ```
 
-When the same key exists in multiple identities, `key get` / `key list` use the first match and warn. Pass `-i` to disambiguate.
+When the same key exists in multiple identities, `key get` / `key list` use the first match and warn. Pass `-i` to disambiguate. For public keys, `-i public` or omit `-i` (public is checked first).
 
 ### Load vars into the current shell
 
@@ -106,7 +137,7 @@ eval $(senv use backend)
 
 `use` may emit conflict warnings on stderr when the same key is defined in multiple identities. These are non-fatal; the first identity's value is used. To resolve, pass `-i <identity>` to `key get` / `key list`.
 
-With a preset name, `use` exports only keys listed in that preset (stored in plaintext under `presets` in `.senv.json`). Missing or undecryptable keys emit `[WARN]` on stderr; export continues for available keys.
+Without a preset name, `use` exports public values plus decrypted secrets for the target env. Works for public keys even without a keystore. With a preset name, `use` exports only keys listed in that preset (stored in plaintext under `presets` in `.senv.json`). Missing or undecryptable keys emit `[WARN]` on stderr; export continues for available keys.
 
 ### Manage presets
 
@@ -130,11 +161,16 @@ senv preset check --strict
 ### Import from a .env file
 
 ```bash
+# Into an encrypted identity
 senv migrate <identity> .env
 senv migrate <identity> .env -e prod
+
+# Into the public section (no identity)
+senv migrate --public .env
+senv migrate --public .env -e prod
 ```
 
-Imports only missing keys for the target environment. Skips keys that already exist in the identity's payload. Invalid env var names and values over 16 KB are skipped with a warning on stderr.
+Imports only missing keys for the target environment. Skips keys that already exist. Invalid env var names and values over 16 KB are skipped with a warning on stderr. Respects public/encrypted mutual exclusivity for locally decryptable identities.
 
 ### Share access with a teammate
 
@@ -156,6 +192,12 @@ senv merge
 senv merge .senv.json .senv.incoming.json
 ```
 
+**Identities only:** `senv merge` decrypts, unions, and re-encrypts `identities` blobs. It does **not** merge `public` or `presets`.
+
+- Resolve conflicts in `public`, `presets`, and other plaintext sections with normal git merge tools (before or after `senv merge`).
+- When identity conflict markers are present, `senv merge` **preserves** an intact `public` array from outside the conflict block (same as `presets`). It does not wipe plaintext sections.
+- Incoming `public` from `FILE_B` is ignored; use git to reconcile plaintext.
+
 Auto-detects conflict markers in `.senv.json`. Without markers, provide both files explicitly.
 
 ## Command reference
@@ -166,15 +208,19 @@ Initialize `.senv.json` and create a local keypair if missing. If `.senv.json` a
 
 ### `senv use [PRESET_NAME]`
 
-Output `export KEY=value` lines for `eval $(senv use)`. Without a preset, aggregates across all decryptable identities for the target env. With a preset name, exports only keys in that preset (in list order). Warns on stderr for missing preset keys.
+Output `export KEY=value` lines for `eval $(senv use)`. Without a preset, aggregates **public** values plus decrypted identity secrets for the target env. With a preset name, exports only keys in that preset (in list order). Warns on stderr for missing preset keys.
 
 ### `senv merge [FILE_A] [FILE_B]`
 
-Merge conflicting or separate `.senv.json` files. Default `FILE_A` is `.senv.json` in the resolved project directory (cwd, git root, or `SENV_PROJECT_DIR`).
+Merge conflicting or separate `.senv.json` **identity** blobs. Preserves intact `public` / `presets` from outside conflict markers; does not auto-merge plaintext sections. Default `FILE_A` is `.senv.json` in the resolved project directory.
 
-### `senv migrate <ID_NAME> <ENV_FILE>`
+### `senv migrate [ID_NAME] <ENV_FILE> [--public]`
 
-Import missing keys from a `.env` file into an identity's payload for the target env. Skips keys that already exist and invalid/oversized values.
+Import missing keys from a `.env` file. With `--public`, imports into the `public` array (no identity). Otherwise requires `ID_NAME`. Skips existing keys and invalid/oversized values.
+
+### `senv upgrade`
+
+Upgrade `.senv.json` to the current schema version (e.g. `1.0` → `1.1`). Idempotent when already current. Not `.env` import (`migrate`) or CLI self-update (`update`).
 
 ### `senv update`
 
@@ -202,19 +248,19 @@ Import a base64 keypair into the local keystore. Prompts on overwrite unless `-y
 
 ### `senv key list [-i <identity>]`
 
-List keys grouped by environment and identity. Without `-e`, shows all environments. Conflict warnings on stderr.
+List keys grouped by environment and identity (`[public]` or `[<identity>]`). Public values in plaintext; secrets masked. Sorted by `(environment, key)`. Without `-e`, shows all environments. Conflict warnings on stderr.
 
 ### `senv key get <KEY> [-i <identity>]`
 
-Print plaintext value for a key.
+Print plaintext value. Checks `public` for the target env first, then decrypted identities.
 
-### `senv key add <ID_NAME> <KEY> <VALUE>`
+### `senv key add [ID_NAME] <KEY> <VALUE> [--public]`
 
-Add or update a key in an identity's payload. Max value size: 16 KB.
+Add or update a key. With `--public`, writes to the project-wide `public` array (no identity/keystore). Otherwise requires `ID_NAME` and encrypts into that identity. Max value size: 16 KB. Public and encrypted keys are mutually exclusive per `environment:key`.
 
-### `senv key rm <ID_NAME> <KEY>`
+### `senv key rm [ID_NAME] <KEY> [--public]`
 
-Remove a key from an identity for the target env.
+Remove a key. With `--public`, removes from the `public` array. Otherwise requires `ID_NAME` and re-encrypts the identity payload.
 
 ### `senv preset add <PRESET_NAME> <KEY...>`
 
@@ -238,11 +284,12 @@ Install this skill file into `.agents/skills/secure-env-tool/SKILL.md` (create o
 
 ## How it works (brief)
 
-- AES-256-GCM encrypts the key-value payload
-- RSA-2048 (PKCS1_OAEP, SHA-256) encrypts the AES DEK
+- AES-256-GCM encrypts each identity's key-value payload; RSA-2048 (PKCS1_OAEP, SHA-256) encrypts the AES DEK
 - Each identity in `.senv.json` is its own encrypted blob for that identity's public key
-- `presets` (optional) hold plaintext env-var name lists for partial `senv use`
+- `public` (optional, schema `1.1`) holds project-wide plaintext env vars as an array of `{ key, value, environment }` objects — readable without a keystore
+- `presets` (optional) hold plaintext env-var **name** lists for partial `senv use`
 - Sharing = sharing the private key (export/import), not multi-recipient encryption
+- `senv merge` only merges `identities`; `public` / `presets` conflicts use git merge tools
 
 ## Test and automation
 

@@ -95,6 +95,9 @@ describe("CLI operations", () => {
 
     expect(await fs.exists(configPath)).toBe(true);
     expect(await fs.exists(keystorePath)).toBe(true);
+
+    const config = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(config.version).toBe("1.1");
   });
 
   it("handles adding and retrieving keys", async () => {
@@ -1455,5 +1458,219 @@ describe("CLI operations", () => {
     const strictRes = await runCLI("preset", "check", "--strict");
     expect(strictRes.exitCode).toBe(1);
     expect(strictRes.stderr.toString()).toContain("MISSING_KEY");
+  });
+
+  it("key add --public stores plaintext without keystore", async () => {
+    await runCLI("init");
+    const addRes = await runCLI("key", "add", "--public", "PUBLIC_URL", "http://localhost:3000");
+    expect(addRes.exitCode).toBe(0);
+    expect(addRes.stdout.toString()).toContain("Added public 'PUBLIC_URL'");
+
+    const config = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(config.public).toEqual([
+      { key: "PUBLIC_URL", value: "http://localhost:3000", environment: "dev" },
+    ]);
+
+    const getRes = await runCLI("key", "get", "PUBLIC_URL");
+    expect(getRes.exitCode).toBe(0);
+    expect(getRes.stdout.toString().trim()).toBe("http://localhost:3000");
+
+    const listRes = await runCLI("key", "list");
+    expect(listRes.exitCode).toBe(0);
+    expect(listRes.stdout.toString()).toContain("[public]");
+    expect(listRes.stdout.toString()).toContain("PUBLIC_URL = http://localhost:3000");
+  });
+
+  it("key list sorts by environment then key", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "--public", "ZEBRA", "z");
+    await runCLI("key", "add", "--public", "ALPHA", "a", "-e", "prod");
+    await runCLI("key", "add", "--public", "BETA", "b");
+
+    const listRes = await runCLI("key", "list");
+    const out = listRes.stdout.toString();
+    const betaIdx = out.indexOf("BETA = b");
+    const zebraIdx = out.indexOf("ZEBRA = z");
+    const alphaIdx = out.indexOf("ALPHA = a");
+    expect(betaIdx).toBeGreaterThan(-1);
+    expect(zebraIdx).toBeGreaterThan(betaIdx);
+    expect(alphaIdx).toBeGreaterThan(zebraIdx);
+  });
+
+  it("key add rejects duplicate across public and encrypted", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "--public", "SHARED_KEY", "public-val");
+    const encRes = await runCLI("key", "add", "testuser-local", "SHARED_KEY", "secret");
+    expect(encRes.exitCode).toBe(1);
+    expect(encRes.stderr.toString()).toContain("already exists as a public value");
+
+    await runCLI("key", "rm", "--public", "SHARED_KEY");
+    await runCLI("key", "add", "testuser-local", "SHARED_KEY", "secret");
+    const pubRes = await runCLI("key", "add", "--public", "SHARED_KEY", "public-val");
+    expect(pubRes.exitCode).toBe(1);
+    expect(pubRes.stderr.toString()).toContain("already exists in encrypted identity");
+  });
+
+  it("key rm --public removes a public value", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "--public", "MODE", "development");
+    const rmRes = await runCLI("key", "rm", "--public", "MODE");
+    expect(rmRes.exitCode).toBe(0);
+
+    const getRes = await runCLI("key", "get", "MODE");
+    expect(getRes.exitCode).toBe(1);
+  });
+
+  it("use exports public values without decrypting identities", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "--public", "PUBLIC_URL", "http://localhost");
+    const useRes = await runCLI("use");
+    expect(useRes.exitCode).toBe(0);
+    expect(useRes.stdout.toString()).toContain("export PUBLIC_URL=");
+    expect(useRes.stdout.toString()).toContain("http://localhost");
+  });
+
+  it("migrate --public imports into public section", async () => {
+    await runCLI("init");
+    const envPath = path.join(tempProjectDir, "import.env");
+    await fs.writeFile(envPath, "PUBLIC_URL=http://example.com\nSECRET=ignored\n", "utf-8");
+
+    const migrateRes = await runCLI("migrate", "--public", envPath);
+    expect(migrateRes.exitCode).toBe(0);
+    expect(migrateRes.stdout.toString()).toContain("- PUBLIC_URL");
+
+    const getRes = await runCLI("key", "get", "PUBLIC_URL");
+    expect(getRes.stdout.toString().trim()).toBe("http://example.com");
+  });
+
+  it("upgrade bumps .senv.json from 1.0 to 1.1", async () => {
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        version: "1.0",
+        identities: { "testuser-local": "encrypted-blob" },
+        presets: { backend: ["API_KEY"] },
+      }),
+      "utf-8"
+    );
+
+    const upgradeRes = await runCLI("upgrade");
+    expect(upgradeRes.exitCode).toBe(0);
+    expect(upgradeRes.stdout.toString()).toContain("Upgraded .senv.json: 1.0 -> 1.1");
+
+    const onDisk = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(onDisk.version).toBe("1.1");
+    expect(onDisk.identities).toEqual({ "testuser-local": "encrypted-blob" });
+    expect(onDisk.presets).toEqual({ backend: ["API_KEY"] });
+    expect(onDisk.public).toBeUndefined();
+  });
+
+  it("upgrade is idempotent when already at current version", async () => {
+    await runCLI("init");
+
+    const firstRes = await runCLI("upgrade");
+    expect(firstRes.exitCode).toBe(0);
+    expect(firstRes.stdout.toString()).toContain("already at version 1.1");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const before = await fs.readFile(configPath, "utf-8");
+
+    const secondRes = await runCLI("upgrade");
+    expect(secondRes.exitCode).toBe(0);
+    expect(secondRes.stdout.toString()).toContain("already at version 1.1");
+
+    const after = await fs.readFile(configPath, "utf-8");
+    expect(after).toBe(before);
+  });
+
+  it("upgrade fails when .senv.json is missing", async () => {
+    const res = await runCLI("upgrade");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain(".senv.json not found");
+  });
+
+  it("init rejects reserved identity name public", async () => {
+    const res = await runCLI("init", "public");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toMatch(/Invalid identity name|public/);
+  });
+
+  it("identity add rejects reserved identity name public", async () => {
+    await runCLI("init");
+    const res = await runCLI("identity", "add", "public");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toMatch(/Invalid identity name|public/);
+  });
+
+  it("key list -i public shows only public values", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "--public", "PUBLIC_URL", "http://localhost");
+    await runCLI("key", "add", "testuser-local", "SECRET", "hidden");
+
+    const listRes = await runCLI("key", "list", "-i", "public");
+    expect(listRes.exitCode).toBe(0);
+    expect(listRes.stdout.toString()).toContain("PUBLIC_URL = http://localhost");
+    expect(listRes.stdout.toString()).not.toContain("SECRET");
+  });
+
+  it("key add --public update preserves extra metadata fields", async () => {
+    await runCLI("init");
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        version: "1.1",
+        identities: JSON.parse(await fs.readFile(configPath, "utf-8")).identities,
+        public: [
+          {
+            key: "PUBLIC_URL",
+            value: "http://old",
+            environment: "dev",
+            comment: "staging base",
+          },
+        ],
+      }),
+      "utf-8"
+    );
+
+    const addRes = await runCLI("key", "add", "--public", "PUBLIC_URL", "http://new");
+    expect(addRes.exitCode).toBe(0);
+
+    const config = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(config.public[0].value).toBe("http://new");
+    expect(config.public[0].comment).toBe("staging base");
+  });
+
+  it("merge preserves public from conflicted file prefix", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "testuser-local", "KEY_OURS", "val_ours");
+
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const headConfig = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    const oursBlob = headConfig.identities["testuser-local"];
+
+    const conflicted = `{
+  "version": "1.1",
+  "public": [
+    { "key": "PUBLIC_URL", "value": "http://localhost", "environment": "dev" }
+  ],
+  "identities": {
+<<<<<<< HEAD
+    "testuser-local": "${oursBlob}"
+=======
+    "testuser-local": "${oursBlob}"
+>>>>>>> branch
+  }
+}`;
+    await fs.writeFile(configPath, conflicted);
+
+    const mergeRes = await runCLI("merge");
+    expect(mergeRes.exitCode).toBe(0);
+
+    const merged = JSON.parse(await fs.readFile(configPath, "utf-8"));
+    expect(merged.public).toEqual([
+      { key: "PUBLIC_URL", value: "http://localhost", environment: "dev" },
+    ]);
   });
 });

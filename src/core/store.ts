@@ -2,6 +2,9 @@ import { access, mkdir, open, readFile, realpath, rename, unlink } from "node:fs
 import * as path from "node:path";
 import * as os from "node:os";
 import { getGitRoot } from "./git";
+import { PUBLIC_IDENTITY_LABEL, sortPublicItems, validatePublicItems } from "./validation";
+
+export { PUBLIC_IDENTITY_LABEL } from "./validation";
 
 /** RSA keypair for a single identity in the local keystore. */
 export interface Identity {
@@ -22,7 +25,18 @@ export interface Keystore {
   };
 }
 
-/** On-disk `.senv.json` schema: encrypted identity blobs and optional named presets. */
+/**
+ * Plaintext project-wide env var in `.senv.json`.
+ * Same core fields as {@link SenvPayloadItem}; extra keys (e.g. future `comment`) are preserved on round-trip.
+ */
+export interface SenvPublicItem {
+  key: string;
+  value: string;
+  environment: string;
+  [extra: string]: unknown;
+}
+
+/** On-disk `.senv.json` schema: encrypted identity blobs, optional public values, and optional presets. */
 export interface SenvProjectConfig {
   version: string;
   identities: {
@@ -31,6 +45,7 @@ export interface SenvProjectConfig {
   presets?: {
     [presetName: string]: string[];
   };
+  public?: SenvPublicItem[];
 }
 
 /** One decrypted environment variable inside an identity payload. */
@@ -46,8 +61,11 @@ export type SenvPayload = SenvPayloadItem[];
 /** Supported `identity.json` schema version. Bump with a migration path in {@link validateKeystoreVersion}. */
 export const CURRENT_KEYSTORE_VERSION = "1.0";
 
-/** Supported `.senv.json` schema version. Bump with a migration path in {@link validateProjectConfigVersion}. */
-export const CURRENT_PROJECT_CONFIG_VERSION = "1.0";
+/** Supported `.senv.json` schema version for newly created configs. Bump with a migration path in {@link validateProjectConfigVersion}. */
+export const CURRENT_PROJECT_CONFIG_VERSION = "1.1";
+
+/** All `.senv.json` versions accepted by {@link validateProjectConfigVersion}. */
+export const SUPPORTED_PROJECT_CONFIG_VERSIONS = ["1.0", "1.1"] as const;
 
 /**
  * Validates that parsed JSON matches the supported keystore schema version.
@@ -75,20 +93,23 @@ export function validateKeystoreVersion(parsed: any): Keystore {
  * Validates that parsed JSON matches the supported `.senv.json` schema version.
  *
  * @param parsed - Raw JSON value from `.senv.json`.
- * @returns Typed {@link SenvProjectConfig} when the version matches {@link CURRENT_PROJECT_CONFIG_VERSION}.
+ * @returns Typed {@link SenvProjectConfig} when `version` is in {@link SUPPORTED_PROJECT_CONFIG_VERSIONS}.
  * @throws When the version field is missing or unsupported.
  */
 export function validateProjectConfigVersion(parsed: any): SenvProjectConfig {
+  const supported = SUPPORTED_PROJECT_CONFIG_VERSIONS as readonly string[];
   if (
     !parsed ||
     typeof parsed !== "object" ||
     typeof parsed.version !== "string" ||
-    parsed.version !== CURRENT_PROJECT_CONFIG_VERSION
+    !supported.includes(parsed.version)
   ) {
     const got = parsed && typeof parsed === "object" && typeof parsed.version === "string"
       ? parsed.version
       : "<missing>";
-    throw new Error(`Unsupported .senv.json version. Expected '${CURRENT_PROJECT_CONFIG_VERSION}'. Got '${got}'.`);
+    throw new Error(
+      `Unsupported .senv.json version. Expected one of ${supported.map((v) => `'${v}'`).join(", ")}. Got '${got}'.`
+    );
   }
 
   if (!parsed.identities || typeof parsed.identities !== "object" || Array.isArray(parsed.identities)) {
@@ -119,7 +140,69 @@ export function validateProjectConfigVersion(parsed: any): SenvProjectConfig {
     }
   }
 
+  if (parsed.public !== undefined) {
+    parsed.public = validatePublicItems(parsed.public);
+  }
+
   return parsed as SenvProjectConfig;
+}
+
+/**
+ * @param config - Project config (may lack `public`).
+ * @param env - Target environment name.
+ * @returns Public items for `env`, sorted by `key`.
+ */
+export function getPublicItemsForEnv(config: SenvProjectConfig, env: string): SenvPublicItem[] {
+  if (!config.public) return [];
+  return config.public.filter((item) => item.environment === env);
+}
+
+/**
+ * @param config - Project config.
+ * @param env - Target environment.
+ * @param key - Environment variable name.
+ * @returns Index in `config.public`, or `-1` when absent.
+ */
+export function findPublicItemIndex(config: SenvProjectConfig, env: string, key: string): number {
+  if (!config.public) return -1;
+  return config.public.findIndex((item) => item.environment === env && item.key === key);
+}
+
+/**
+ * Inserts or updates a public item and re-sorts `config.public`.
+ *
+ * @param config - Project config mutated in place.
+ * @param item - Full public item to upsert.
+ */
+export function upsertPublicItem(config: SenvProjectConfig, item: SenvPublicItem): void {
+  if (!config.public) config.public = [];
+  const idx = findPublicItemIndex(config, item.environment, item.key);
+  if (idx >= 0) {
+    const existing = config.public[idx]!;
+    config.public[idx] = { ...existing, ...item };
+  } else {
+    config.public.push(item);
+  }
+  config.public = sortPublicItems(config.public);
+}
+
+/**
+ * Removes a public item when present.
+ *
+ * @param config - Project config mutated in place.
+ * @param env - Target environment.
+ * @param key - Environment variable name.
+ * @returns `true` when an item was removed.
+ */
+export function removePublicItem(config: SenvProjectConfig, env: string, key: string): boolean {
+  if (!config.public) return false;
+  const idx = findPublicItemIndex(config, env, key);
+  if (idx < 0) return false;
+  config.public.splice(idx, 1);
+  if (config.public.length === 0) {
+    delete config.public;
+  }
+  return true;
 }
 
 /**
