@@ -28,11 +28,13 @@ type FlatEntry = {
 /**
  * @param a - First entry.
  * @param b - Second entry.
- * @returns Comparison for sort by `(environment, key)`.
+ * @returns Comparison for sort by `(environment, identityName, key)` so grouped headers appear once.
  */
-function compareByEnvironmentThenKey(a: FlatEntry, b: FlatEntry): number {
+function compareListEntries(a: FlatEntry, b: FlatEntry): number {
   const envCmp = a.environment.localeCompare(b.environment);
   if (envCmp !== 0) return envCmp;
+  const idCmp = a.identityName.localeCompare(b.identityName);
+  if (idCmp !== 0) return idCmp;
   return a.key.localeCompare(b.key);
 }
 
@@ -62,7 +64,7 @@ export const keyListCmd = new Command("list")
         }
       }
 
-      entries.sort(compareByEnvironmentThenKey);
+      entries.sort(compareListEntries);
 
       if (entries.length === 0) {
         const where: string[] = [];

@@ -1503,6 +1503,25 @@ describe("CLI operations", () => {
     expect(alphaIdx).toBeGreaterThan(zebraIdx);
   });
 
+  it("key list prints one header per environment and identity", async () => {
+    await runCLI("init");
+    await runCLI("key", "add", "--public", "APP_ENV", "local");
+    await runCLI("key", "add", "--public", "SESSION_COOKIE_NAME", "sw_session");
+    await runCLI("key", "add", "testuser-local", "DATABASE_URL", "postgres");
+    await runCLI("key", "add", "testuser-local", "SESSION_SECRET", "secret");
+
+    const listRes = await runCLI("key", "list");
+    expect(listRes.exitCode).toBe(0);
+    const out = listRes.stdout.toString();
+    const publicHeaders = out.match(/Keys for environment 'dev' \[public\]:/g) ?? [];
+    const identityHeaders = out.match(/Keys for environment 'dev' \[testuser-local\]:/g) ?? [];
+    expect(publicHeaders).toHaveLength(1);
+    expect(identityHeaders).toHaveLength(1);
+    expect(out).toMatch(
+      /Keys for environment 'dev' \[public\]:\nAPP_ENV = local\nSESSION_COOKIE_NAME = sw_session\n\nKeys for environment 'dev' \[testuser-local\]:/s
+    );
+  });
+
   it("key add rejects duplicate across public and encrypted", async () => {
     await runCLI("init");
     await runCLI("key", "add", "--public", "SHARED_KEY", "public-val");
