@@ -90,6 +90,35 @@ export function validateProjectConfigVersion(parsed: any): SenvProjectConfig {
       : "<missing>";
     throw new Error(`Unsupported .senv.json version. Expected '${CURRENT_PROJECT_CONFIG_VERSION}'. Got '${got}'.`);
   }
+
+  if (!parsed.identities || typeof parsed.identities !== "object" || Array.isArray(parsed.identities)) {
+    throw new Error("Invalid .senv.json: 'identities' must be an object.");
+  }
+
+  for (const [idName, blob] of Object.entries(parsed.identities)) {
+    if (typeof blob !== "string" || blob.length === 0) {
+      throw new Error(`Invalid .senv.json: identities['${idName}'] must be a non-empty string.`);
+    }
+  }
+
+  if (parsed.presets !== undefined) {
+    if (typeof parsed.presets !== "object" || Array.isArray(parsed.presets)) {
+      throw new Error("Invalid .senv.json: 'presets' must be an object.");
+    }
+    for (const [presetName, keys] of Object.entries(parsed.presets)) {
+      if (!Array.isArray(keys)) {
+        throw new Error(`Invalid .senv.json: presets['${presetName}'] must be an array of strings.`);
+      }
+      for (let i = 0; i < keys.length; i++) {
+        if (typeof keys[i] !== "string") {
+          throw new Error(
+            `Invalid .senv.json: presets['${presetName}'][${i}] must be a string.`
+          );
+        }
+      }
+    }
+  }
+
   return parsed as SenvProjectConfig;
 }
 

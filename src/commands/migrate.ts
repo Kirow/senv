@@ -3,8 +3,8 @@ import { readFile } from "node:fs/promises";
 import { parseEnv } from "node:util";
 import * as senvCrypto from "../core/crypto";
 import * as store from "../core/store";
+import { MAX_VALUE_BYTES } from "../core/validation";
 import { isValidEnvName, isValidIdentityName, getCommandOptions } from "./utils";
-import { MAX_VALUE_BYTES } from "./key/add";
 
 export const migrateCmd = new Command("migrate")
   .argument("<ID_NAME>", "Name of the identity")

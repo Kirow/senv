@@ -200,7 +200,23 @@ If multiple people edit `.senv.json` simultaneously, use the merge command to sa
 senv merge .senv.json .senv.incoming.json
 ```
 
-### 7. Agent Skill
+When git conflict markers are present, `senv merge` uses a branch-name heuristic to pick incoming blobs for identities you cannot decrypt: the `>>>>>>>` label is matched against the `<owner>-local` portion of the identity name (e.g. branch `alice` matches `alice-local`). Branch names that do not match this pattern (e.g. `feature/alice-local`) may keep the wrong side — use explicit `FILE_A` + `FILE_B` merge instead.
+
+### 7. Migrate from `.env`
+One-time import of keys from a plaintext `.env` file into an identity:
+```bash
+senv migrate my-identity .env
+senv migrate my-identity path/to/.env
+```
+Values larger than 16 KB are skipped with a warning. Uses the current `-e/--env` environment (default `dev`).
+
+### 8. Self-update
+```bash
+senv update
+```
+Checks GitHub for a newer release and runs the same install script as [Quick Install](#quick-install) (`curl … | sh`). Only use on networks and sources you trust.
+
+### 9. Agent Skill
 Install the senv agent skill so AI tools know how to use the CLI in this project:
 ```bash
 senv install skill

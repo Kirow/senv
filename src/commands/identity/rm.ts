@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import * as store from "../../core/store";
 import * as readline from "node:readline/promises";
-import { getCommandOptions } from "../utils";
+import { getCommandOptions, isValidIdentityName } from "../utils";
 
 export const identityRmCmd = new Command("rm")
   .argument("<ID_NAME>", "Name of the identity to remove")
@@ -10,6 +10,11 @@ export const identityRmCmd = new Command("rm")
   .action(async (idName, options, command) => {
     const { keystorePath } = getCommandOptions(command);
     try {
+      if (!isValidIdentityName(idName)) {
+        console.error(`Invalid identity name '${idName}'. Use letters, digits, '.', '_' or '-' only.`);
+        process.exit(1);
+      }
+
       const config = await store.readProjectConfig();
       if (!config.identities[idName]) {
         console.error(`Identity '${idName}' not found in .senv.json.`);

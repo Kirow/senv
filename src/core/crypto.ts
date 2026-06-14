@@ -1,5 +1,6 @@
 import * as crypto from "node:crypto";
 import type { SenvPayload } from "./store";
+import { validatePayload } from "./validation";
 
 /**
  * Generates a new RSA-2048 keypair for a senv identity.
@@ -94,7 +95,7 @@ export function decryptPayload(encryptedString: string, privateKey: string): Sen
   let decrypted = decipher.update(packed.encryptedPayload, "base64", "utf8");
   decrypted += decipher.final("utf8");
 
-  return JSON.parse(decrypted) as SenvPayload;
+  return validatePayload(JSON.parse(decrypted));
 }
 
 /**

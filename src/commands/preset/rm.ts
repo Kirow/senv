@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import * as store from "../../core/store";
-import { isValidPresetName } from "../utils";
+import { isValidEnvName, isValidPresetName } from "../utils";
 
 export const presetRmCmd = new Command("rm")
   .argument("<PRESET_NAME>", "Name of the preset")
@@ -35,6 +35,10 @@ export const presetRmCmd = new Command("rm")
       let removed = 0;
 
       for (const key of keys) {
+        if (!isValidEnvName(key)) {
+          console.error(`Invalid environment variable name '${key}'. Must match /^[A-Za-z_][A-Za-z0-9_]*$/.`);
+          process.exit(1);
+        }
         if (keySet.has(key)) {
           keySet.delete(key);
           removed++;

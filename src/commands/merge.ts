@@ -159,8 +159,8 @@ export const mergeCmd = new Command("merge")
         theirsLabel = parsed.theirsLabel;
       } else if (fileB) {
         const contentB = await fs.readFile(fileB, "utf-8");
-        configA = JSON.parse(contentA) as SenvProjectConfig;
-        configB = JSON.parse(contentB) as SenvProjectConfig;
+        configA = store.validateProjectConfigVersion(JSON.parse(contentA));
+        configB = store.validateProjectConfigVersion(JSON.parse(contentB));
         sourceLabel = fileB;
       } else {
         console.error("Merge failed: no git conflict markers in file and FILE_B was not provided.");

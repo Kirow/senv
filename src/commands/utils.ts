@@ -1,14 +1,9 @@
 import * as senvCrypto from "../core/crypto";
 import * as store from "../core/store";
-import { type SenvPayload } from "../core/store";
+import { type KeystoreProjectStore, type SenvPayload } from "../core/store";
+import { isValidEnvName, isValidIdentityName } from "../core/validation";
 
-/**
- * @param name - Candidate identity or preset name.
- * @returns `true` when `name` matches `/^[A-Za-z0-9._-]+$/`.
- */
-export function isValidIdentityName(name: string): boolean {
-  return typeof name === "string" && /^[A-Za-z0-9._-]+$/.test(name);
-}
+export { isValidEnvName, isValidIdentityName } from "../core/validation";
 
 /** Alias for {@link isValidIdentityName}; preset names use the same character set. */
 export function isValidPresetName(name: string): boolean {
@@ -84,11 +79,25 @@ export function warnMissingPresetKeys(
 }
 
 /**
- * @param name - Candidate shell environment variable name.
- * @returns `true` when `name` matches `/^[A-Za-z_][A-Za-z0-9_]*$/`.
+ * Returns a PEM public key for re-encryption, or exits with a clear decrypt-only message.
+ *
+ * @param projectKeystore - Local keystore for the current project.
+ * @param idName - Identity being updated.
+ * @returns PEM-encoded RSA public key.
  */
-export function isValidEnvName(name: string): boolean {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
+export function requirePublicKeyForEncrypt(
+  projectKeystore: KeystoreProjectStore,
+  idName: string
+): string {
+  const publicKey = projectKeystore[idName]?.publicKey;
+  if (!publicKey || !senvCrypto.isValidPEM(publicKey, "public")) {
+    console.error(
+      `Cannot re-encrypt '${idName}': missing or invalid public key in local keystore. ` +
+        `'key add' and 'key rm' require a public key; import a full keypair or a public key bundle.`
+    );
+    process.exit(1);
+  }
+  return publicKey;
 }
 
 /** @param command - Commander subcommand instance. @returns Root `Command` program. */

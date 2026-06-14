@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
-import { isValidIdentityName, getCommandOptions } from "../utils";
+import { isValidIdentityName, getCommandOptions, requirePublicKeyForEncrypt } from "../utils";
 
 export const keyRmCmd = new Command("rm")
   .argument("<ID_NAME>", "Name of the identity")
@@ -42,7 +42,8 @@ export const keyRmCmd = new Command("rm")
         return;
       }
 
-      const newEncrypted = senvCrypto.encryptPayload(filtered, projectKeystore[idName].publicKey);
+      const publicKey = requirePublicKeyForEncrypt(projectKeystore, idName);
+      const newEncrypted = senvCrypto.encryptPayload(filtered, publicKey);
       config.identities[idName] = newEncrypted;
 
       await store.writeProjectConfig(config);

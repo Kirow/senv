@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import * as readline from "node:readline/promises";
 import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
 import { type SenvProjectConfig, CURRENT_PROJECT_CONFIG_VERSION } from "../../core/store";
@@ -6,6 +7,7 @@ import { isValidIdentityName, getCommandOptions } from "../utils";
 
 export const identityAddCmd = new Command("add")
   .argument("<ID_NAME>", "Name of the identity")
+  .option("-y, --yes", "Skip overwrite confirmation prompt")
   .description("Generates a keypair and registers a new identity")
   .action(async (idName, options, command) => {
     const { keystorePath } = getCommandOptions(command);
@@ -33,13 +35,30 @@ export const identityAddCmd = new Command("add")
         process.exit(1);
       }
 
+      const projectKeystore = await store.getProjectKeystore(keystorePath);
+
+      if (projectKeystore[idName] && !options.yes) {
+        if (!process.stdin.isTTY) {
+          process.stderr.write("Aborted.\n");
+          return;
+        }
+        const rl = readline.createInterface({
+          input: process.stdin,
+          output: process.stdout,
+        });
+        const answer = await rl.question(
+          `Identity '${idName}' already exists in the local keystore. Overwrite? (y/N): `
+        );
+        rl.close();
+        if (answer.trim().toLowerCase() !== "y") {
+          process.stderr.write("Aborted.\n");
+          return;
+        }
+      }
+
       console.log(`Generating keypair for '${idName}'...`);
       const keypair = senvCrypto.generateRSAKeyPair();
 
-      const projectKeystore = await store.getProjectKeystore(keystorePath);
-      if (projectKeystore[idName]) {
-        process.stderr.write(`Identity '${idName}' already exists in local keystore; overwriting with new keypair.\n`);
-      }
       projectKeystore[idName] = keypair;
       await store.writeProjectKeystore(projectKeystore, keystorePath);
 

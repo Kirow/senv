@@ -270,6 +270,7 @@ describe("CLI operations", () => {
       // But adding a new key fails because there is no public key in this keystore
       const addRes = await runCLI("key", "add", "testuser-local", "NEW_KEY", "x", "--keystore", path.join(fresh, "identity.json"));
       expect(addRes.exitCode).toBe(1);
+      expect(addRes.stderr.toString()).toContain("missing or invalid public key");
     } finally {
       await fs.rm(fresh, { recursive: true, force: true });
     }
@@ -749,6 +750,13 @@ describe("CLI operations", () => {
     expect(config.identities["victim"]).toBeDefined();
   });
 
+  it("identity rm rejects invalid identity name", async () => {
+    await runCLI("init");
+    const res = await runCLI("identity", "rm", "bad id!");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("Invalid identity name");
+  });
+
   it("identity rm of non-existent identity exits 1", async () => {
     await runCLI("init");
     const res = await runCLI("identity", "rm", "ghost", "-y");
@@ -957,6 +965,36 @@ describe("CLI operations", () => {
     expect(addRes.stderr.toString()).toContain("already exists");
   });
 
+  it("identity add aborts on non-TTY when keystore entry exists without config entry", async () => {
+    await runCLI("init");
+    await runCLI("identity", "add", "extra-id");
+    const b64 = (await runCLI("identity", "export", "extra-id")).stdout.toString().trim();
+    await runCLI("identity", "rm", "extra-id", "-y");
+    await runCLI("identity", "import", b64, "-y");
+
+    const addRes = await runCLINoStdin("identity", "add", "extra-id");
+    expect(addRes.exitCode).toBe(0);
+    expect(addRes.stderr).toContain("Aborted.");
+
+    const config = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(config.identities["extra-id"]).toBeUndefined();
+  });
+
+  it("identity add with -y overwrites existing keystore entry not in config", async () => {
+    await runCLI("init");
+    await runCLI("identity", "add", "extra-id");
+    const b64 = (await runCLI("identity", "export", "extra-id")).stdout.toString().trim();
+    await runCLI("identity", "rm", "extra-id", "-y");
+    await runCLI("identity", "import", b64, "-y");
+
+    const addRes = await runCLI("identity", "add", "extra-id", "-y");
+    expect(addRes.exitCode).toBe(0);
+    expect(addRes.stdout.toString()).toContain("Successfully added identity 'extra-id'.");
+
+    const config = JSON.parse(await fs.readFile(path.join(tempProjectDir, ".senv.json"), "utf-8"));
+    expect(config.identities["extra-id"]).toBeDefined();
+  });
+
   it("key rm for identity missing public key errors on re-encrypt", async () => {
     await runCLI("init");
     await runCLI("identity", "add", "pkless");
@@ -968,6 +1006,7 @@ describe("CLI operations", () => {
       await runCLI("identity", "import", b64, "-y", "--keystore", path.join(freshKs, "identity.json"));
       const rmRes = await runCLI("key", "rm", "pkless", "TO_DEL", "--keystore", path.join(freshKs, "identity.json"));
       expect(rmRes.exitCode).toBe(1);
+      expect(rmRes.stderr.toString()).toContain("missing or invalid public key");
     } finally {
       await fs.rm(freshKs, { recursive: true, force: true });
     }
@@ -1191,6 +1230,14 @@ describe("CLI operations", () => {
     expect(config2.presets).toBeUndefined();
   });
 
+  it("preset rm rejects invalid key names", async () => {
+    await runCLI("init");
+    await runCLI("preset", "add", "backend", "API_KEY");
+    const res = await runCLI("preset", "rm", "backend", "bad-key!");
+    expect(res.exitCode).toBe(1);
+    expect(res.stderr.toString()).toContain("Invalid environment variable name");
+  });
+
   it("preset rm errors when preset not found", async () => {
     await runCLI("init");
     const res = await runCLI("preset", "rm", "ghost");
@@ -1247,6 +1294,17 @@ describe("CLI operations", () => {
     expect(stderr).toContain("MISSING_A");
     expect(stderr).toContain("MISSING_B");
     expect(stderr).not.toContain("API_KEY");
+  });
+
+  it("merge rejects unsupported config version in FILE_B", async () => {
+    await runCLI("init");
+    const configPath = path.join(tempProjectDir, ".senv.json");
+    const fileB = path.join(tempProjectDir, "bad.senv.json");
+    await fs.writeFile(fileB, JSON.stringify({ version: "99.0", identities: {} }), "utf-8");
+
+    const mergeRes = await runCLI("merge", configPath, fileB);
+    expect(mergeRes.exitCode).toBe(1);
+    expect(mergeRes.stderr.toString()).toContain("Unsupported .senv.json version");
   });
 
   it("merge unions presets from two config files", async () => {

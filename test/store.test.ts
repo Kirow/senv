@@ -187,6 +187,24 @@ describe("store operations", () => {
     await expect(store.readProjectConfig()).rejects.toThrow(/Unsupported \.senv\.json version/);
   });
 
+  it("readProjectConfig rejects malformed identities", async () => {
+    await fs.writeFile(
+      path.join(tempProjectDir, ".senv.json"),
+      JSON.stringify({ version: "1.0", identities: { foo: 123 } }),
+      "utf-8"
+    );
+    await expect(store.readProjectConfig()).rejects.toThrow(/identities\['foo'\]/);
+  });
+
+  it("readProjectConfig rejects malformed presets", async () => {
+    await fs.writeFile(
+      path.join(tempProjectDir, ".senv.json"),
+      JSON.stringify({ version: "1.0", identities: {}, presets: { backend: "not-array" } }),
+      "utf-8"
+    );
+    await expect(store.readProjectConfig()).rejects.toThrow(/presets\['backend'\]/);
+  });
+
   it("writeProjectConfig creates file with 0600 permissions", async () => {
     const config: store.SenvProjectConfig = {
       version: "1.0",

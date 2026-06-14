@@ -1,10 +1,8 @@
 import { Command } from "commander";
 import * as senvCrypto from "../../core/crypto";
 import * as store from "../../core/store";
-import { isValidEnvName, isValidIdentityName, getCommandOptions } from "../utils";
-
-/** Maximum UTF-8 byte length for a single secret value (`key add`, `migrate`). */
-export const MAX_VALUE_BYTES = 16 * 1024;
+import { MAX_VALUE_BYTES } from "../../core/validation";
+import { isValidEnvName, isValidIdentityName, getCommandOptions, requirePublicKeyForEncrypt } from "../utils";
 
 export const keyAddCmd = new Command("add")
   .argument("<ID_NAME>", "Name of the identity")
@@ -63,7 +61,7 @@ export const keyAddCmd = new Command("add")
         console.log(`Added '${targetKey}' to '${idName}' for env '${env}'.`);
       }
 
-      const publicKey = projectKeystore[idName].publicKey;
+      const publicKey = requirePublicKeyForEncrypt(projectKeystore, idName);
       const newEncrypted = senvCrypto.encryptPayload(payload, publicKey);
       config.identities[idName] = newEncrypted;
 

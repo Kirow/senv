@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
+import * as nodeCrypto from "node:crypto";
 import * as crypto from "../src/core/crypto";
 import type { SenvPayload } from "../src/core/store";
+import { MAX_VALUE_BYTES } from "../src/core/validation";
 
 const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
@@ -11,6 +13,26 @@ function flipFirstBase64Char(s: string): string {
   const idx = BASE64_ALPHABET.indexOf(first);
   const replacement = idx === 0 ? BASE64_ALPHABET[1]! : BASE64_ALPHABET[0]!;
   return replacement + s.slice(1);
+}
+
+/** Encrypts arbitrary plaintext as the inner AES-GCM payload (for validation tests). */
+function encryptCustomPlaintext(plaintext: string, publicKey: string): string {
+  const dek = nodeCrypto.randomBytes(32);
+  const iv = nodeCrypto.randomBytes(12);
+  const cipher = nodeCrypto.createCipheriv("aes-256-gcm", dek, iv);
+  let encryptedPayload = cipher.update(plaintext, "utf8", "base64");
+  encryptedPayload += cipher.final("base64");
+  const authTag = cipher.getAuthTag().toString("base64");
+  const encryptedDEK = nodeCrypto.publicEncrypt(
+    {
+      key: publicKey,
+      padding: nodeCrypto.constants.RSA_PKCS1_OAEP_PADDING,
+      oaepHash: "sha256",
+    },
+    dek
+  ).toString("base64");
+  const packed = { encryptedDEK, iv: iv.toString("base64"), authTag, encryptedPayload };
+  return Buffer.from(JSON.stringify(packed), "utf8").toString("base64");
 }
 
 describe("crypto operations", () => {
@@ -192,5 +214,25 @@ describe("crypto operations", () => {
     expect(() => {
       crypto.decryptPayload(encrypted, publicKey);
     }).toThrow();
+  });
+
+  it("rejects decrypted payload that is not an array", () => {
+    const { publicKey, privateKey } = crypto.generateRSAKeyPair();
+    const encrypted = encryptCustomPlaintext(JSON.stringify({ not: "array" }), publicKey);
+    expect(() => crypto.decryptPayload(encrypted, privateKey)).toThrow(/Invalid payload/);
+  });
+
+  it("rejects decrypted payload with invalid item shape", () => {
+    const { publicKey, privateKey } = crypto.generateRSAKeyPair();
+    const encrypted = encryptCustomPlaintext(JSON.stringify([{ key: 1 }]), publicKey);
+    expect(() => crypto.decryptPayload(encrypted, privateKey)).toThrow(/Invalid payload/);
+  });
+
+  it("rejects decrypted payload with oversized value", () => {
+    const { publicKey, privateKey } = crypto.generateRSAKeyPair();
+    const huge = "x".repeat(MAX_VALUE_BYTES + 1);
+    const payload: SenvPayload = [{ key: "BIG", value: huge, environment: "dev" }];
+    const encrypted = crypto.encryptPayload(payload, publicKey);
+    expect(() => crypto.decryptPayload(encrypted, privateKey)).toThrow(/exceeds maximum size/);
   });
 });

@@ -45,41 +45,46 @@ export const initCmd = new Command("init")
       return;
     }
 
-    let idName: string;
-    if (idNameArg !== undefined && idNameArg !== "") {
-      if (!isValidIdentityName(idNameArg)) {
-        console.error(`Invalid identity name '${idNameArg}'. Use letters, digits, '.', '_' or '-' only.`);
-        process.exit(1);
+    try {
+      let idName: string;
+      if (idNameArg !== undefined && idNameArg !== "") {
+        if (!isValidIdentityName(idNameArg)) {
+          console.error(`Invalid identity name '${idNameArg}'. Use letters, digits, '.', '_' or '-' only.`);
+          process.exit(1);
+        }
+        idName = idNameArg;
+      } else {
+        const rawUser = process.env.USER || process.env.USERNAME || "user";
+        const sanitizedUser = rawUser
+          .replace(/[^A-Za-z0-9._-]+/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^[.-]+|[.-]+$/g, "");
+        const baseIdentity = sanitizedUser.length > 0 ? sanitizedUser : "user";
+        idName = `${baseIdentity}-local`;
       }
-      idName = idNameArg;
-    } else {
-      const rawUser = process.env.USER || process.env.USERNAME || "user";
-      const sanitizedUser = rawUser
-        .replace(/[^A-Za-z0-9._-]+/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^[.-]+|[.-]+$/g, "");
-      const baseIdentity = sanitizedUser.length > 0 ? sanitizedUser : "user";
-      idName = `${baseIdentity}-local`;
+
+      let keypair = projectKeystore[idName];
+      if (!keypair) {
+        console.log(`Generating new RSA keypair for identity: ${idName}...`);
+        keypair = senvCrypto.generateRSAKeyPair();
+        projectKeystore[idName] = keypair;
+        await store.writeProjectKeystore(projectKeystore, keystorePath);
+      }
+
+      console.log("Creating .senv.json...");
+      const config: SenvProjectConfig = {
+        version: CURRENT_PROJECT_CONFIG_VERSION,
+        identities: {},
+      };
+
+      const emptyEncrypted = senvCrypto.encryptPayload([], keypair.publicKey);
+      config.identities[idName] = emptyEncrypted;
+      await store.writeProjectConfig(config);
+      console.log(`Initialized successfully. Identity '${idName}' added.`);
+    } catch (e: any) {
+      console.error(e.message);
+      process.exit(1);
     }
-
-    let keypair = projectKeystore[idName];
-    if (!keypair) {
-      console.log(`Generating new RSA keypair for identity: ${idName}...`);
-      keypair = senvCrypto.generateRSAKeyPair();
-      projectKeystore[idName] = keypair;
-      await store.writeProjectKeystore(projectKeystore, keystorePath);
-    }
-
-    console.log("Creating .senv.json...");
-    const config: SenvProjectConfig = {
-      version: CURRENT_PROJECT_CONFIG_VERSION,
-      identities: {},
-    };
-
-    const emptyEncrypted = senvCrypto.encryptPayload([], keypair.publicKey);
-    config.identities[idName] = emptyEncrypted;
-    await store.writeProjectConfig(config);
-    console.log(`Initialized successfully. Identity '${idName}' added.`);
   });
 
 /**
